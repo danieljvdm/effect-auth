@@ -1,7 +1,18 @@
-import { Cause, Context, DateTime, Duration, Effect, Redacted, Schema, Scope } from "effect";
+import {
+  Cause,
+  Context,
+  DateTime,
+  Duration,
+  Effect,
+  Redacted,
+  Schema,
+  SchemaAST,
+  Scope,
+} from "effect";
 import { Cookies } from "effect/unstable/http";
 
 import { AuthRequest } from "../auth/AuthRequest";
+import { HookDenied } from "../hooks/models";
 import { reportAuthFailure } from "../internal/diagnostics";
 import type { AuthInvocation } from "../operations/context";
 import {
@@ -283,6 +294,22 @@ export const make = <
     const services = yield* Effect.context<Requirements>();
     const config = yield* OperationHttpServerConfig;
     const invocation = yield* OperationHttpInvocation;
+
+    for (const route of Object.values(contract.routes)) {
+      if (
+        route.method === "GET" &&
+        (route.operation.replay !== "read-only" ||
+          route.operation.credentials ||
+          route.reveals.length > 0 ||
+          route.operation.reveals.length > 0 ||
+          Object.keys(route.credentials).length > 0 ||
+          !(
+            SchemaAST.isVoid(Schema.toEncoded(route.operation.rpc.payloadSchema).ast) ||
+            SchemaAST.isUndefined(Schema.toEncoded(route.operation.rpc.payloadSchema).ast)
+          ))
+      )
+        return yield* OperationHttpConfigurationError.make({ reason: "route" });
+    }
     const routes = new Map(Object.values(contract.routes).map((route) => [route.path, route]));
     const callbacks = new Map<string, OAuthHttpCallback>();
 
@@ -319,7 +346,7 @@ export const make = <
             return yield* OperationHttpError.make({ reason: "origin" });
           if (
             url.search !== "" ||
-            request.headers.get("access-control-request-method") !== "POST" ||
+            request.headers.get("access-control-request-method") !== route.method ||
             requestedHeaders.some(
               (header) => header !== "content-type" && header !== config.csrfHeader,
             )
@@ -329,7 +356,7 @@ export const make = <
 
           headers.set("access-control-allow-origin", origin);
           headers.set("access-control-allow-credentials", "true");
-          headers.set("access-control-allow-methods", "POST");
+          headers.set("access-control-allow-methods", route.method);
           headers.set("access-control-allow-headers", `content-type, ${config.csrfHeader}`);
           headers.set(
             "vary",
@@ -338,22 +365,25 @@ export const make = <
 
           return new Response(null, { status: 204, headers });
         }
-        if (request.method !== (callback === undefined ? "POST" : "GET"))
+        if (request.method !== (callback === undefined ? route.method : "GET"))
           return yield* OperationHttpError.make({ reason: "method" });
         if (callback === undefined && url.search !== "")
           return yield* OperationHttpError.make({ reason: "request" });
 
         const security = yield* requestSecurity(
           request,
-          callback === undefined ? "operation" : "callback",
+          callback === undefined ? (route.method === "GET" ? "read" : "operation") : "callback",
         );
 
         const raw =
-          callback === undefined
-            ? (yield* Schema.decodeEffect(Schema.fromJsonString(HttpRequestBody))(
-                yield* boundedText(request, config.maximumBodyBytes),
-              ).pipe(Effect.mapError(() => OperationHttpError.make({ reason: "request" })))).payload
-            : yield* callbackPayload(callback, request, security.credentials, url);
+          callback === undefined && route.method === "GET"
+            ? undefined
+            : callback === undefined
+              ? (yield* Schema.decodeEffect(Schema.fromJsonString(HttpRequestBody))(
+                  yield* boundedText(request, config.maximumBodyBytes),
+                ).pipe(Effect.mapError(() => OperationHttpError.make({ reason: "request" }))))
+                  .payload
+              : yield* callbackPayload(callback, request, security.credentials, url);
 
         const payload = yield* inject(route, raw, security.credentials);
         const trusted = yield* invocation.resolve(request, security.credentials);
@@ -409,6 +439,8 @@ export const make = <
               ? {}
               : { resolveInvocation: invocation.request(request, security.credentials) }),
             credentials: security.credentials,
+            beforeMutation:
+              route.method === "GET" ? HookDenied.make({ reason: "policy" }) : Effect.void,
             credentialCommandSink: sink,
             revealCommandCollector: collector,
           }),

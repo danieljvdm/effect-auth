@@ -11,9 +11,16 @@ import {
   Scope,
 } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import {
+  HttpApi,
+  HttpApiBuilder,
+  type HttpApiGroup,
+  type HttpApiEndpoint,
+} from "effect/unstable/httpapi";
 
 import { AuthRequest } from "../auth/AuthRequest";
 import type { SessionApi, SessionApiError } from "../auth/session";
+import { HookDenied } from "../hooks/models";
 import { OperationHttpConfigurationError, OperationHttpError } from "../http-operation/errors";
 import type { HttpCredentials, OperationHttpConfiguration } from "../http-operation/models";
 import {
@@ -25,7 +32,7 @@ import {
   cookieConfiguration,
   OperationHttpServerConfig,
 } from "../http-operation/OperationHttpServerConfig";
-import { requestSecurity } from "../http-operation/security";
+import { mutationSecurity, requestSecurity } from "../http-operation/security";
 import { make as makeOperationServer } from "../http-operation/server";
 import type { ActionSuccess, AuthActions } from "../operations/actions";
 import { guest } from "../operations/context";
@@ -35,6 +42,7 @@ import {
   AuthRevealCommandCollectorService,
 } from "../operations/credentials";
 import type { SessionMetadata } from "../sessions/models";
+import { httpGroup, matchesEndpoint } from "./auth-contract";
 import type { makeSessionHttpContract } from "./session-contract";
 
 /** Browser transport policy. Insecure cookies require an explicit development override. */
@@ -51,9 +59,10 @@ export interface AuthHttpOptions {
   readonly csrf?: { readonly header: string; readonly value: string };
 }
 
-/** Bind an Auth definition to its shared browser actions and request middleware.
- * Actions resolve credentials lazily and require Origin, JSON and a CSRF header.
- * The application still owns session policy, persistence and profile lookup.
+/** Bind an Auth definition to shared browser actions and neutral request middleware.
+ * Mutation admission checks Origin and CSRF before effects. Generated operation
+ * handlers independently require JSON; custom protected workflows choose their encoding.
+ * The application owns session policy, persistence and profile lookup.
  */
 export const make = <
   I,
@@ -182,16 +191,27 @@ export const make = <
         return yield* OperationHttpError.make({ reason: "too-large" });
       }
 
-      const read = request.method === "GET" || request.method === "HEAD";
-
-      const security = yield* requestSecurity(request, read ? "read" : "operation").pipe(
+      const security = yield* requestSecurity(request, "request").pipe(
         Effect.provideService(OperationHttpServerConfig, config),
       );
 
       const commands: AuthCredentialCommand[] = [];
+      let mutationAdmitted = false;
+
+      const beforeMutation = mutationSecurity(request).pipe(
+        Effect.provideService(OperationHttpServerConfig, config),
+        Effect.mapError(() => HookDenied.make({ reason: "policy" })),
+        Effect.tap(() =>
+          Effect.sync(() => {
+            mutationAdmitted = true;
+          }),
+        ),
+      );
 
       const sink = (values: ReadonlyArray<AuthCredentialCommand>) =>
         Effect.sync(() => {
+          if (!mutationAdmitted)
+            throw new Error("Credential delivery requires an admitted mutation");
           commands.push(...values);
         });
 
@@ -203,13 +223,8 @@ export const make = <
           invocation: guest,
           credentials: security.credentials,
           resolveInvocation,
+          beforeMutation,
           credentialCommandSink: sink,
-        }),
-        Effect.provideService(AuthCredentialCommandCollector, sink),
-        Effect.provideService(AuthRevealCommandCollectorService, {
-          supportedKinds: [],
-          accept: () =>
-            Effect.die(new Error("Private reveals require an explicit operation route")),
         }),
       );
 
@@ -236,7 +251,7 @@ export const make = <
     });
 
   const requestLayer = HttpRouter.middleware<{
-    provides: I | AuthRequest | AuthCredentialCommandCollector | AuthRevealCommandCollectorService;
+    provides: I | AuthRequest;
   }>()(
     Effect.gen(function* () {
       const api = yield* auth;
@@ -271,6 +286,23 @@ export const make = <
   /** Apply to raw HttpRouter or HttpApi route Layers. Authentication is explicit in handlers. */
   const middleware = Layer.provide(requestLayer);
 
+  /** Admit a custom mutation before it runs; body encoding remains application-owned. */
+  const protect = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    Effect.gen(function* () {
+      const request = yield* AuthRequest;
+
+      if (request.beforeMutation !== undefined) yield* request.beforeMutation;
+
+      return yield* effect.pipe(
+        Effect.provideService(AuthCredentialCommandCollector, request.credentialCommandSink),
+        Effect.provideService(AuthRevealCommandCollectorService, {
+          supportedKinds: [],
+          accept: () =>
+            Effect.die(new Error("Private reveals require an explicit operation route")),
+        }),
+      );
+    });
+
   /** Wrap a custom response workflow, keeping all credential delivery request-local. */
   const withRequest = <E, R>(effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>) =>
     Effect.gen(function* () {
@@ -283,7 +315,7 @@ export const make = <
   /** Mount the shared contract. Each route calls the same local method, and
    * request credentials are installed before that method executes. Paths belong
    * to the contract so server and client cannot configure them independently. */
-  const routes = () => {
+  const makeServer = () => {
     type Call = Extract<
       Api[Extract<keyof Actions, keyof Api>],
       (...args: never[]) => Effect.Effect<unknown, unknown, unknown>
@@ -344,31 +376,92 @@ export const make = <
       }),
     );
 
-    return Layer.unwrap(
-      Effect.gen(function* () {
-        const server = yield* makeOperationServer({ routes: table }).pipe(
-          Effect.provide([configuration, requestInvocation]),
+    return makeOperationServer({ routes: table }).pipe(
+      Effect.provide([configuration, requestInvocation]),
+    );
+  };
+
+  /** Implement the AuthContract.httpGroup mounted in the consumer's HttpApi.
+   * Raw handlers preserve private input rejection and bounded decoding before
+   * any schema can project away unknown fields. There is one transport engine.
+   */
+  const handlers = <
+    ApiId extends string,
+    Groups extends HttpApiGroup.Constraint,
+    const Name extends HttpApiGroup.Identifier<Groups> = Extract<
+      HttpApiGroup.Identifier<Groups>,
+      "auth"
+    >,
+  >(
+    api: HttpApi.HttpApi<ApiId, Groups>,
+    options?: { readonly name?: Name },
+  ) => {
+    const name = (options?.name ?? "auth") as Name;
+
+    type Mounted = HttpApiGroup.WithIdentifier<Groups, Name>;
+    type Endpoint = HttpApiGroup.Endpoints<Mounted>;
+    type Requirements<E extends HttpApiEndpoint.Constraint> = E extends HttpApiEndpoint.Constraint
+      ?
+          | HttpApiEndpoint.Middleware<E>
+          | HttpApiEndpoint.MiddlewareServices<E>
+          | HttpRouter.Request.From<
+              "Requires",
+              HttpApiEndpoint.ExcludeProvided<
+                E,
+                HttpApiEndpoint.ServerServices<E> | HttpServerRequest.HttpServerRequest
+              >
+            >
+      : never;
+
+    return HttpApiBuilder.group(
+      api,
+      name,
+      Effect.fn("AuthHttp.handlers")(function* (handlers) {
+        const mounted = (Object.values(api.groups) as HttpApiGroup.Top[]).find(
+          (candidate) => candidate.identifier === name,
         );
 
-        return Layer.mergeAll(
-          Layer.empty,
-          ...Object.values(table).map((route) =>
-            HttpRouter.add(
-              "POST",
-              route.path,
-              Effect.gen(function* () {
-                const request = yield* HttpServerRequest.toWeb(
-                  yield* HttpServerRequest.HttpServerRequest,
-                ).pipe(Effect.mapError(() => OperationHttpError.make({ reason: "request" })));
+        if (
+          mounted === undefined ||
+          Object.keys(mounted.endpoints).length !== Object.keys(auth.contract.actions).length
+        )
+          return yield* OperationHttpConfigurationError.make({ reason: "route" });
+        for (const [name, action] of Object.entries(auth.contract.actions)) {
+          const actual = mounted.endpoints[name];
 
-                return HttpServerResponse.fromWeb(yield* server.handle(request));
-              }),
-            ),
-          ),
-        );
+          if (actual === undefined || !matchesEndpoint(actual, action))
+            return yield* OperationHttpConfigurationError.make({ reason: "route" });
+        }
+        const server = yield* makeServer();
+
+        for (const name of Object.keys(auth.contract.actions)) {
+          handlers.handleRaw(name as Parameters<typeof handlers.handleRaw>[0], () =>
+            Effect.gen(function* () {
+              const request = yield* HttpServerRequest.toWeb(
+                yield* HttpServerRequest.HttpServerRequest,
+              ).pipe(Effect.orDie);
+
+              return HttpServerResponse.fromWeb(yield* server.handle(request));
+            }),
+          );
+        }
+
+        // handleRaw registers in place; the loop covers every named endpoint.
+        return handlers as HttpApiBuilder.Handlers<
+          Requirements<Endpoint>,
+          Mounted["endpoints"],
+          keyof Mounted["endpoints"]
+        >;
       }),
     );
   };
 
-  return { routes, middleware, withRequest, operationLayer, securityLayer };
+  /** Standalone mounting uses the same generated HttpApi group and handlers. */
+  const routes = () => {
+    const api = HttpApi.make(`${auth.key}/http`).add(httpGroup(auth.contract));
+
+    return HttpApiBuilder.layer(api).pipe(Layer.provide(handlers(api)));
+  };
+
+  return { routes, handlers, middleware, withRequest, operationLayer, securityLayer, protect };
 };

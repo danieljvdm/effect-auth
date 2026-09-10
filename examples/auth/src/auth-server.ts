@@ -1,8 +1,9 @@
 import { Effect, Layer } from "effect";
 import { Auth, Password, Sessions } from "effect-auth";
 import * as AuthHttp from "effect-auth/Http";
+import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-import { AuthApi } from "./auth-contract";
+import { AppApi, AuthApi } from "./auth-contract";
 
 export const AppAuth = Auth.make(AuthApi, {
   sessions: Sessions.stateful(),
@@ -12,8 +13,19 @@ export const AppAuth = Auth.make(AuthApi, {
 
 export const http = AuthHttp.make(AppAuth, { origin: "https://app.example.com" });
 
+const HealthHandlers = HttpApiBuilder.group(AppApi, "health", (handlers) =>
+  handlers.handle("check", () => Effect.succeed("ok")),
+);
+
 // Supply the application-owned session store, password store and account authority.
-export const Routes = http.routes().pipe(Layer.provide(AppAuth.layer));
+export const Routes = HttpApiBuilder.layer(AppApi, { openapiPath: "/openapi.json" }).pipe(
+  Layer.provide(http.handlers(AppApi)),
+  Layer.provide(HealthHandlers),
+  Layer.provide(AppAuth.layer),
+);
+
+// For a raw HttpRouter, merge this Layer with the application's route Layers.
+export const AuthRoutes = http.routes().pipe(Layer.provide(AppAuth.layer));
 
 // In an application route covered by http.middleware, these local methods use
 // AuthRequest from Effect context. Calling them does not make an HTTP request.

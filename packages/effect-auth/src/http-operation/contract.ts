@@ -27,10 +27,11 @@ export type CredentialFields<O extends HttpOperation> = Readonly<
 export interface OperationHttpRoute<
   O extends HttpOperation,
   Fields extends Readonly<Record<string, CredentialSlot>> = Record<never, never>,
+  Method extends "POST" | "GET" = "POST",
 > {
   readonly operation: O;
   readonly path: string;
-  readonly method: "POST";
+  readonly method: Method;
   readonly credentials: Fields;
   readonly reveals: ReadonlyArray<AuthRevealKind>;
 }
@@ -72,7 +73,11 @@ export const route = <
   });
 };
 
-export type AnyRoute = OperationHttpRoute<HttpOperation, Readonly<Record<string, CredentialSlot>>>;
+export type AnyRoute = OperationHttpRoute<
+  HttpOperation,
+  Readonly<Record<string, CredentialSlot>>,
+  "POST" | "GET"
+>;
 
 export type RouteInput<R extends AnyRoute> = keyof R["credentials"] extends never
   ? R["operation"]["rpc"]["payloadSchema"]["Encoded"]

@@ -13,3 +13,5 @@ export {
 } from "./operations/actions";
 
 export { signIn as passwordSignIn } from "./password/methods/contracts";
+
+export { httpGroup } from "./http/auth-contract";

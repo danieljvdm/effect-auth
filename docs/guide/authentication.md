@@ -48,8 +48,9 @@ const Routes = Layer.mergeAll(http.routes(), ApplicationRoutes.pipe(http.middlew
 ```
 
 `http.routes()` mounts the shared action table with its request handling. Apply
-`http.middleware` to your other application routes. Within those routes, call
-the service directly:
+`http.middleware` to application routes that need session context. It accepts
+ordinary form, multipart, and JSON endpoints without imposing auth's payload
+format. Within those routes, call the service directly:
 
 ```ts
 const currentMember = Effect.fn("app.currentMember")(function* () {
@@ -80,6 +81,28 @@ explicit: session reads never silently rotate credentials. Outside a request,
 `verifySession(redactedCredential)` verifies a supplied credential without cookie
 or delivery requirements.
 
+An existing `HttpApi` can include the auth group in its shared contract and OpenAPI:
+
+```ts
+// Shared API module
+const Api = HttpApi.make("app").add(ExistingGroup, AuthContract.httpGroup(AuthApi));
+
+// Server module
+const Routes = HttpApiBuilder.layer(Api, { openapiPath: "/openapi.json" }).pipe(
+  Layer.provide(http.handlers(Api)),
+  Layer.provide(ExistingHandlers),
+  Layer.provide(AuthLive),
+);
+```
+
+Both mounting forms use the same handlers and bounded operation transport.
+The group defaults to `auth`; pass matching `{ name: "account" }` options to
+`httpGroup` and `handlers` to rename it. Group middleware and annotations compose
+normally and their service requirements remain visible. Configure auth paths in
+the `basePath` option on `AuthContract.make`, rather than prefixing or replacing
+the generated endpoints after construction. The handler checks that the mounted
+group still describes the exact shared contract.
+
 The same contract gives browser code a named HTTP client, usable without React:
 
 ```ts
@@ -101,37 +124,93 @@ Calls such as `client.auth.signIn({ email, password })` and
 CSRF transport settings; application code does not construct request headers.
 Each call makes one attempt, with typed errors and schema decoding requirements.
 
-For reactive clients, acquire the Atom integration once in the application's
-Scope, sharing that client:
+For React, install the optional `@effect/atom-react`, `react`, and `scheduler`
+peers and define the provider once:
 
-```ts
-import * as AuthAtom from "effect-auth/Atom";
+```tsx
+import * as AuthReact from "effect-auth/React";
+import { useAtomValue, useAtomSet } from "@effect/atom-react";
 
-const makeBrowserAuth = Effect.gen(function* () {
-  const client = yield* Client.make(AuthApi, { baseUrl: "https://app.example.com" });
-  const auth = yield* AuthAtom.make(client.auth);
-
-  return { client, auth };
+export const BrowserAuth = AuthReact.make(AuthApi, {
+  baseUrl: "https://app.example.com",
 });
+
+function App() {
+  return (
+    <BrowserAuth.Provider fallback={<Loading />}>
+      <Routes />
+    </BrowserAuth.Provider>
+  );
+}
+
+function Account() {
+  const auth = BrowserAuth.useAuth();
+  const session = useAtomValue(auth.session);
+  const signOut = useAtomSet(auth.signOut);
+
+  return <AccountView session={session} onSignOut={() => signOut(undefined)} />;
+}
 ```
 
-At the application boundary, read `auth.lifetime.current` in
-`auth.lifetime.controlRegistry`. Mount the account subtree and its atoms in the
-returned `current.registry`, switching that registry when `current` changes.
-Components then read `auth.session` and dispatch `auth.signIn` or `auth.signOut`.
-`session` is the `getSession` query atom; the other declared actions also have
-named atoms. The [client example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-client.ts)
-keeps construction and scope ownership together.
+The provider owns its client, Scope, and registry switching. `session` is an
+`AsyncResult` query; each declared action also has a named atom. The same client
+is available as `auth.client.auth`. Each owned provider acquires independently;
+keep one around the account subtree. Put account-specific application atoms
+inside it so account changes dispose their state too. Place state intended to
+survive sign-out in an outer application registry. Setup failures reach the
+application's React error boundary. Keep provider configuration stable and use a
+React key to remount when changing it. See the [React example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-react.ts).
 
-Successful mutations invalidate the shared auth queries. Authentication
-completion and sign-out dispose the previous account registry before publishing
-the next subject; pending authentication keeps the current registry. Direct calls
-through the same `client.auth` also invalidate queries and publish those
-transitions. Private reveals stay in the configured finite collector, outside
-query results. Keep multi-step flows in `AuthAtom.workflow`, and declare
-reactivity keys on custom mutations; `auth.runtime` shares the integration's
-Reactivity instance. React renders and dispatches, including returning
-promise-mode dispatches without chaining authentication logic in components.
+Without React, or when the application already owns an Effect Scope, construct
+the same bindings directly:
+
+```ts
+const memoMap = yield * Layer.makeMemoMap;
+const appRuntime = Atom.context({ memoMap });
+const client = yield * Client.make(AuthApi, { baseUrl: "https://app.example.com" });
+const auth =
+  yield *
+  AuthAtom.make(client.auth, {
+    memoMap,
+    reactivityKeys: { signOut: ["projects", "profile"] },
+  });
+```
+
+Use the same memo map for existing application runtimes whose queries must share
+invalidation. Each successful mutation invalidates the auth queries and its
+additional application keys. Account transitions settle invalidation before
+interruption can escape from the disposing account registry. Direct calls through
+the same `client.auth` publish the same transitions and invalidations. Private
+reveals remain in their finite collector, outside query state.
+
+Render an already acquired handle with `<BrowserAuth.Provider value={auth}>`.
+The provider borrows that handle; the host keeps its Scope alive and closes it
+after unmounting. `AuthReact.fromEffect(acquire)` accepts a custom acquisition
+Effect whose dependencies have already been provided. `AuthReact.make` accepts
+`services` for contract codec services, requiring that Layer in its options when
+necessary. No async work runs while defining a provider.
+
+For SSR, an owned provider renders only its fallback on the server. For
+session-aware rendering, acquire a handle in each request's Scope and pass the
+encoded result of the local `auth.getSession()` as `AuthAtom.make`'s
+`initialSession` option. Render with `Provider value`, serialize only that public
+session through the framework's serializer, and close the request Scope. Before
+browser hydration, acquire a separate handle with the same seed in the browser
+application's Scope. Never share a server registry, client, or request-bearing
+memo map across requests. The [SSR example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-ssr.ts)
+shows rendering, hydration, and unmount finalizers.
+
+The initial session is schema-decoded display data, not client authority. Server
+rendering does not fetch. Browser reads still verify the live cookie; a result,
+failure, or account transition permanently drops the seed. It cannot reappear
+after sign-out. Do not hydrate auth atoms through generic late hydration updates.
+
+Advanced non-React hosts can still observe `auth.lifetime.current` through its
+`controlRegistry` and mount action/account atoms in `current.registry`.
+`auth.runtime` provides the lifetime service for custom workflow atoms. Keep
+multi-step flows in Effect and declare mutation reactivity keys; React renders
+and dispatches, including returning promise-mode dispatches without `.then`
+chains that orchestrate authentication.
 
 `AuthContract.action` defines an additional action's input, success, and error
 schemas, query or mutation mode, and selected implementation method/strategy.
@@ -178,16 +257,21 @@ service. `Auth.make` creates the service definition synchronously; `AppAuth.laye
 provides an instance, while `yield* AppAuth.make` constructs one directly in the
 caller's Scope.
 
-All shared HTTP actions use POST, including queries, with the existing operation
-request/response envelope. The contract owns paths through its `basePath` option,
-which defaults to `/auth`; set it in `AuthContract.make` to change the prefix for
-both server and client. The four default routes are `/auth/getSession`,
-`/auth/requireSession`, `/auth/signOut`, and `/auth/renewSession`. This replaces
-the earlier high-level GET session route and individually configured route paths.
+No-input query actions use GET, including `/auth/getSession` and
+`/auth/requireSession`. Mutations use POST, including `/auth/signOut` and
+`/auth/renewSession`. Queries with payloads stay POST so arbitrary inputs and
+credentials do not enter URLs. The contract owns paths through `basePath`, which
+defaults to `/auth`; server and named client use the same descriptors.
 
-Every shared action requires the configured Origin, JSON content type, and
-`x-effect-auth-csrf: 1` by default. `Client.make` supplies the JSON and CSRF
-settings, while the browser manages Origin and cookies. Cookie defaults are
+POST auth actions require the configured Origin, JSON content type, and
+`x-effect-auth-csrf: 1` by default. GET actions have no body or CSRF header and
+reject an explicitly untrusted Origin. `Client.make` handles the operation
+request/response envelopes and transport settings, while the browser manages
+Origin and cookies. The native `HttpApi` group documents those exact envelopes;
+a plain `HttpApiClient` does not replace the named client's credential admission,
+private reveal handling, or account lifetime coordination.
+
+Cookie defaults are
 `Secure`, `HttpOnly`, `SameSite=Lax`, path `/`, and the `__Host-effect-auth-`
 prefix. Override `cookie.name` for the session slot,
 `cookie.prefix` for all slots, or `csrf` for a different header/value. Plain HTTP
@@ -199,6 +283,14 @@ not cacheable. Pass matching `csrf` settings to `Client.make` when overriding th
 request credentials and private collectors for each request, and delivers
 commands as cookies on the completed response. It does not make every endpoint
 require authentication; protected application handlers call `requireSession()`.
+Named auth mutations validate Origin and CSRF before calling their implementation,
+even when called locally from an application route. Raw strategy methods are
+conservatively treated as mutations; declared queries supply their read mode.
+For custom credential-producing workflows, use `http.protect(effect)` inside the
+request boundary. It validates mutation policy before running the workflow and
+providing credential collectors, while leaving its body format to the application.
+Unprotected raw credential operations cannot acquire the collectors. The host
+still owns ordinary application mutation policy, including webhook validation.
 For declarative HttpApi protection, define `makeSessionHttpContract` from the
 pure `SessionContract` module beside the shared API. Add its `RequireSession`
 middleware to protected endpoints or groups, and yield its typed `CurrentSession`

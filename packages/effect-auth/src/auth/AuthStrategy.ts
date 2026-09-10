@@ -87,6 +87,11 @@ export const makeAuthStrategy = <
             // Resolve before providing the shared handler context: callers never get captured.
             const request = yield* AuthRequest;
 
+            // Raw strategy methods are conservatively mutations. Only a trusted
+            // named query declaration can admit a read without mutation policy.
+            if (request.actionMode !== "query" && request.beforeMutation !== undefined)
+              yield* request.beforeMutation;
+
             const invocation = yield* (
               request.resolveInvocation ?? Effect.succeed(request.invocation)
             );

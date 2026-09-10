@@ -153,6 +153,7 @@ export const makeActionApi = Effect.fn("Auth.makeActionApi")(function* <
       const value = yield* method(payload).pipe(
         Effect.provideService(AuthRequest, {
           ...request,
+          actionMode: action.mode,
           credentialCommandSink: sink,
           revealCommandCollector: collector,
         }),
@@ -183,6 +184,9 @@ export const makeActionApi = Effect.fn("Auth.makeActionApi")(function* <
       name,
       Effect.fn(`Auth.${name}`)(function* (input: unknown) {
         const request = yield* AuthRequest;
+
+        if (action.mode === "mutation" && request.beforeMutation !== undefined)
+          yield* request.beforeMutation;
 
         // Reject private input before schema projection can remove unknown fields.
         if (

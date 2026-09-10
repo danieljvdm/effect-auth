@@ -1,5 +1,5 @@
 import type { Effect } from "effect";
-import { Schema } from "effect";
+import { Schema, SchemaAST } from "effect";
 import type { Rpc } from "effect/unstable/rpc";
 
 import { HookDenied } from "../hooks/models";
@@ -134,9 +134,16 @@ const bindAction = <
 
   if (
     !Schema.is(Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z][A-Za-z0-9]*$/)))(name) ||
-    ["then", "__proto__", "constructor", "prototype", "session", "lifetime", "runtime"].includes(
-      name,
-    ) ||
+    [
+      "then",
+      "__proto__",
+      "constructor",
+      "prototype",
+      "session",
+      "lifetime",
+      "runtime",
+      "client",
+    ].includes(name) ||
     (definition.mode === "query" &&
       (definition.credentials === true ||
         reveals.length > 0 ||
@@ -159,7 +166,13 @@ const bindAction = <
     route: Object.freeze({
       operation,
       path: `${basePath}/${name}` as const,
-      method: "POST" as const,
+      method:
+        definition.mode === "query" &&
+        Object.keys(requestFields).length === 0 &&
+        (SchemaAST.isVoid(Schema.toEncoded(definition.payload).ast) ||
+          SchemaAST.isUndefined(Schema.toEncoded(definition.payload).ast))
+          ? ("GET" as const)
+          : ("POST" as const),
       credentials: Object.freeze({}),
       reveals,
     }),
@@ -185,7 +198,7 @@ export interface AnyAuthAction {
       ) => Effect.Effect<unknown, unknown, unknown>;
     };
     readonly path: `/${string}`;
-    readonly method: "POST";
+    readonly method: "POST" | "GET";
     readonly credentials: Readonly<Record<never, never>>;
     readonly reveals: ReadonlyArray<AuthRevealKind>;
   };

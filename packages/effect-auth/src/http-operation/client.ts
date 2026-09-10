@@ -63,6 +63,7 @@ export interface OperationAuthenticationCompletion {
     route: R,
     input: RouteInput<R>,
     fromSuccess: (success: RouteSuccess<R>) => string | null | undefined,
+    options?: { readonly onTransition?: Effect.Effect<void> },
   ): Effect.Effect<
     RouteSuccess<R>,
     RouteFailure<R> | OperationHttpError,
@@ -82,6 +83,7 @@ export const makeAuthenticationCompletion = (
     route: R,
     input: RouteInput<R>,
     fromSuccess: (success: RouteSuccess<R>) => string | null | undefined,
+    options?: { readonly onTransition?: Effect.Effect<void> },
   ) {
     const started = yield* client.generation;
 
@@ -101,7 +103,11 @@ export const makeAuthenticationCompletion = (
                 return nextSubject !== undefined;
               },
               onTransition: Effect.suspend(() =>
-                nextSubject === undefined ? Effect.void : publishSubject(nextSubject),
+                nextSubject === undefined
+                  ? Effect.void
+                  : publishSubject(nextSubject).pipe(
+                      Effect.andThen(options?.onTransition ?? Effect.void),
+                    ),
               ),
             });
           }).pipe(
@@ -111,6 +117,7 @@ export const makeAuthenticationCompletion = (
               Effect.gen(function* () {
                 yield* client.transition;
                 yield* publishSubject(null);
+                yield* options?.onTransition ?? Effect.void;
               }),
             ),
           ),
@@ -286,10 +293,17 @@ export const make = Effect.fn("OperationHttpClient.make")(function* (
         payload === undefined ? {} : { payload },
       ).pipe(Effect.mapError(() => OperationHttpError.make({ reason: "request" })));
 
-      const headers = new Headers({
-        "content-type": "application/json",
-        [options.csrfHeader]: options.csrfValue,
-      });
+      if (route.method === "GET" && input !== undefined)
+        return yield* OperationHttpError.make({ reason: "request" });
+
+      const headers = new Headers(
+        route.method === "GET"
+          ? {}
+          : {
+              "content-type": "application/json",
+              [options.csrfHeader]: options.csrfValue,
+            },
+      );
 
       if (options.native !== undefined) {
         headers.set(options.native.modeHeader, "native");
@@ -309,9 +323,9 @@ export const make = Effect.fn("OperationHttpClient.make")(function* (
           if (started !== generation) throw OperationHttpError.make({ reason: "stale-response" });
 
           return (options.fetch ?? globalThis.fetch)(destination, {
-            method: "POST",
+            method: route.method,
             headers,
-            body,
+            ...(route.method === "GET" ? {} : { body }),
             credentials: options.native === undefined ? "include" : "omit",
             redirect: "error",
             signal,

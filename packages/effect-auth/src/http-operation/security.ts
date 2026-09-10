@@ -7,9 +7,26 @@ import { OperationHttpError } from "./errors";
 import { credentialSlots } from "./models";
 import { OperationHttpServerConfig } from "./OperationHttpServerConfig";
 
+/** Browser mutation admission is independent of body encoding. */
+export const mutationSecurity = Effect.fn("OperationHttp.mutationSecurity")(function* (
+  request: Request,
+) {
+  const config = yield* OperationHttpServerConfig;
+  const requestOrigin = request.headers.get("origin");
+
+  if (
+    ["GET", "HEAD", "OPTIONS"].includes(request.method) ||
+    requestOrigin === null ||
+    !config.trustedOrigins.includes(requestOrigin)
+  )
+    return yield* OperationHttpError.make({ reason: "origin" });
+  if (request.headers.get(config.csrfHeader) !== config.csrfValue)
+    return yield* OperationHttpError.make({ reason: "csrf" });
+});
+
 export const requestSecurity = Effect.fn("OperationHttp.requestSecurity")(function* (
   request: Request,
-  kind: "operation" | "callback" | "read",
+  kind: "operation" | "callback" | "read" | "request",
 ) {
   const config = yield* OperationHttpServerConfig;
 
@@ -34,12 +51,10 @@ export const requestSecurity = Effect.fn("OperationHttp.requestSecurity")(functi
       return yield* OperationHttpError.make({ reason: "origin" });
     yield* config.native!.authorize(request);
   } else if (kind === "operation") {
-    if (requestOrigin === null || !config.trustedOrigins.includes(requestOrigin))
-      return yield* OperationHttpError.make({ reason: "origin" });
+    yield* mutationSecurity(request);
     if (
-      request.headers.get(config.csrfHeader) !== config.csrfValue ||
       request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !==
-        "application/json"
+      "application/json"
     )
       return yield* OperationHttpError.make({ reason: "csrf" });
   }

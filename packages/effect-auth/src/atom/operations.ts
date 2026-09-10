@@ -1,7 +1,7 @@
 import type { Scope } from "effect";
 import { Effect } from "effect";
-import type { Atom, Reactivity } from "effect/unstable/reactivity";
-import { AtomRegistry } from "effect/unstable/reactivity";
+import type { Atom } from "effect/unstable/reactivity";
+import { AtomRegistry, Reactivity } from "effect/unstable/reactivity";
 
 import type { OperationFetchClient } from "../http-operation/client";
 import type { AnyRoute, RouteInput, RouteSuccess } from "../http-operation/contract";
@@ -79,7 +79,12 @@ export const mutation = <Route extends AnyRoute, RuntimeError>(
       inLifetime(
         Effect.gen(function* () {
           if (options.subject !== undefined)
-            return yield* completeAuthentication(route, input, options.subject.fromSuccess);
+            return yield* completeAuthentication(
+              route,
+              input,
+              options.subject.fromSuccess,
+              options.reactivityKeys,
+            );
           const { client } = yield* AuthAtomLifetime;
 
           return yield* client.call(route, input);
@@ -94,10 +99,14 @@ const completeAuthentication = Effect.fn("AuthAtom.completeAuthentication")(func
   route: Route,
   input: RouteInput<Route>,
   subject: (value: RouteSuccess<Route>) => string | null | undefined,
+  reactivityKeys: ReactivityKeys,
 ) {
   const lifetime = yield* AuthAtomLifetime;
+  const reactivity = yield* Reactivity.Reactivity;
 
-  return yield* lifetime.completeAuthentication(route, input, subject);
+  return yield* lifetime.completeAuthentication(route, input, subject, {
+    onTransition: reactivity.invalidate(reactivityKeys),
+  });
 });
 
 /** Compose protocol operations and device effects in Atom, leaving rendering
@@ -151,7 +160,9 @@ export const workflow =
               subject,
             ) =>
               current.pipe(
-                Effect.andThen(completeAuthentication(route, value, subject)),
+                Effect.andThen(
+                  completeAuthentication(route, value, subject, options.reactivityKeys),
+                ),
                 Effect.provideService(AuthAtomLifetime, lifetime),
               );
 

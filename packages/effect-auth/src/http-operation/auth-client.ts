@@ -31,8 +31,8 @@ export interface AuthClientState {
 }
 
 export type AuthClientEvent =
-  | { readonly _tag: "Transition"; readonly state: AuthClientState }
-  | { readonly _tag: "Mutation" };
+  | { readonly _tag: "Transition"; readonly state: AuthClientState; readonly action?: string }
+  | { readonly _tag: "Mutation"; readonly name: string };
 
 /** Internal bridge shared with Atom. Subscriptions belong to their host Scope;
  * transition listeners only dispose and publish state, never call the client. */
@@ -92,9 +92,12 @@ export const make = Effect.fn("Client.make")(function* <Actions extends AuthActi
       discard: true,
     });
 
-  const publish = Effect.fn("Client.publishSubject")(function* (subject: string | null) {
+  const publish = Effect.fn("Client.publishSubject")(function* (
+    subject: string | null,
+    action?: string,
+  ) {
     state = { subject, generation: state.generation + 1 };
-    yield* notify({ _tag: "Transition", state });
+    yield* notify({ _tag: "Transition", state, ...(action === undefined ? {} : { action }) });
   });
 
   const completeAuthentication = makeAuthenticationCompletion(transport, gate, publish);
@@ -124,15 +127,19 @@ export const make = Effect.fn("Client.make")(function* <Actions extends AuthActi
 
     const execute = Effect.gen(function* () {
       if (project !== undefined && action.mode === "mutation") {
-        const previousGeneration = state.generation;
+        const generation = state.generation;
 
-        const value = yield* completeAuthentication<Actions[Name]["route"]>(
-          action.route,
-          input,
-          (success) => project.fromSuccess(success),
+        // Notify within credential settlement: disposing an account registry can
+        // interrupt the atom that dispatched this call before a later success tap.
+        const complete = makeAuthenticationCompletion(transport, gate, (subject) =>
+          publish(subject, String(name)),
         );
 
-        transitioned = state.generation !== previousGeneration;
+        const value = yield* complete<Actions[Name]["route"]>(action.route, input, (success) =>
+          project.fromSuccess(success),
+        );
+
+        transitioned = state.generation !== generation;
 
         return value;
       }
@@ -166,7 +173,7 @@ export const make = Effect.fn("Client.make")(function* <Actions extends AuthActi
     const value = yield* execute;
 
     if (action.mode === "mutation" && !transitioned && callOptions?.notifyMutation !== false)
-      yield* notify({ _tag: "Mutation" });
+      yield* notify({ _tag: "Mutation", name: String(name) });
 
     return value;
   });

@@ -1,6 +1,5 @@
 import { Context, Effect, Layer, Schema, Scope, SubscriptionRef } from "effect";
-import type { AsyncResult } from "effect/unstable/reactivity";
-import { Atom, AtomRegistry, Reactivity } from "effect/unstable/reactivity";
+import { AsyncResult, Atom, AtomRegistry, Reactivity } from "effect/unstable/reactivity";
 
 import {
   type ActionDecodeServices,
@@ -11,6 +10,20 @@ import type { RouteFailure, RouteInput, RouteSuccess } from "../http-operation/c
 import { OperationHttpError } from "../http-operation/errors";
 import type { AnyAuthAction, AuthActions } from "../operations/actions";
 import { AuthAtomLifetime, type AuthSubjectLifetime } from "./AuthAtomLifetime";
+import type { ReactivityKeys } from "./operations";
+
+export interface AuthAtomOptions<Actions extends AuthActions> {
+  /** Share layer construction and invalidation with an existing application runtime. */
+  readonly memoMap?: Layer.MemoMap;
+  /** Additional application query keys invalidated by each successful mutation. */
+  readonly reactivityKeys?: Partial<{
+    readonly [
+      Name in keyof Actions as Actions[Name]["mode"] extends "mutation" ? Name : never
+    ]: ReactivityKeys;
+  }>;
+  /** Encoded request-local session data for initial display; live verification still runs. */
+  readonly initialSession?: unknown;
+}
 
 type QueryAtom<Action extends AnyAuthAction> = Atom.Atom<
   AsyncResult.AsyncResult<
@@ -33,6 +46,7 @@ export type AuthAtoms<Actions extends AuthActions & { readonly getSession: AnyAu
   readonly [Name in keyof Actions]: AuthActionAtom<Actions[Name]>;
 } & {
   readonly session: QueryAtom<Actions["getSession"]>;
+  readonly client: { readonly auth: AuthClient<Actions> };
   readonly lifetime: AuthAtomLifetime["Service"];
   readonly runtime: Atom.AtomRuntime<AuthAtomLifetime>;
 };
@@ -45,6 +59,7 @@ export const make = Effect.fn("AuthAtom.make")(function* <
   Actions extends AuthActions & { readonly getSession: AnyAuthAction },
 >(
   auth: AuthClient<Actions>,
+  options: AuthAtomOptions<Actions> = {},
 ): Effect.fn.Return<
   AuthAtoms<Actions>,
   OperationHttpError,
@@ -56,7 +71,9 @@ export const make = Effect.fn("AuthAtom.make")(function* <
 
   if (
     controller.actions.getSession.mode !== "query" ||
-    ["session", "lifetime", "runtime"].some((name) => Object.hasOwn(controller.actions, name)) ||
+    ["session", "lifetime", "runtime", "client"].some((name) =>
+      Object.hasOwn(controller.actions, name),
+    ) ||
     Object.values(controller.actions).some(
       ({ mode, route }) =>
         mode === "query" &&
@@ -68,6 +85,21 @@ export const make = Effect.fn("AuthAtom.make")(function* <
     return yield* OperationHttpError.make({ reason: "request" });
 
   const initial = yield* controller.state;
+  const hasInitialSession = Object.hasOwn(options, "initialSession");
+
+  if (hasInitialSession && initial.generation !== 0)
+    return yield* OperationHttpError.make({ reason: "stale-response" });
+
+  const sessionSchema: Actions["getSession"]["route"]["operation"]["rpc"]["successSchema"] =
+    controller.actions.getSession.route.operation.rpc.successSchema;
+
+  const initialSession = hasInitialSession
+    ? yield* Schema.decodeUnknownEffect(sessionSchema)(options.initialSession).pipe(
+        Effect.mapError(() => OperationHttpError.make({ reason: "response" })),
+        Effect.provide(services),
+      )
+    : undefined;
+
   const controlRegistry = AtomRegistry.make();
 
   const state = yield* SubscriptionRef.make<AuthSubjectLifetime>({
@@ -75,7 +107,7 @@ export const make = Effect.fn("AuthAtom.make")(function* <
     registry: AtomRegistry.make(),
   });
 
-  const memoMap = yield* Layer.makeMemoMap;
+  const memoMap = options.memoMap ?? (yield* Layer.makeMemoMap);
 
   const reactivity = Context.get(
     yield* Layer.buildWithMemoMap(Reactivity.layer, memoMap, scope),
@@ -86,12 +118,20 @@ export const make = Effect.fn("AuthAtom.make")(function* <
   // Reactivity instance used by the public runtime and direct-call listener.
   const queryKeys = [Symbol("effect-auth/client/queries")];
   let closed = false;
+  let seedAvailable = hasInitialSession;
+
+  const extraKeys = options.reactivityKeys as
+    | Readonly<Record<string, ReactivityKeys | undefined>>
+    | undefined;
 
   yield* controller.subscribe((event) =>
     Effect.gen(function* () {
       if (closed) return;
       if (event._tag === "Mutation") {
         yield* reactivity.invalidate(queryKeys);
+        const keys = extraKeys?.[event.name];
+
+        if (keys !== undefined) yield* reactivity.invalidate(keys);
 
         return;
       }
@@ -99,11 +139,17 @@ export const make = Effect.fn("AuthAtom.make")(function* <
       const previous = yield* SubscriptionRef.get(state);
 
       if (previous.generation === event.state.generation) return;
+      seedAvailable = false;
       previous.registry.dispose();
       yield* SubscriptionRef.set(state, {
         ...event.state,
         registry: AtomRegistry.make(),
       });
+      // Account replacement interrupts the dispatching atom. Its external query
+      // invalidation must settle here, under the same admitted transition.
+      const keys = event.action === undefined ? undefined : extraKeys?.[event.action];
+
+      if (keys !== undefined) yield* reactivity.invalidate(keys);
     }),
   );
 
@@ -148,29 +194,58 @@ export const make = Effect.fn("AuthAtom.make")(function* <
     return yield* operation.pipe(Effect.provide(services));
   });
 
+  const initialRegistry = (yield* SubscriptionRef.get(state)).registry;
+
   const atoms = Object.fromEntries(
     Object.entries(controller.actions).map(([name, action]) => {
-      if (action.mode === "mutation")
+      if (action.mode === "mutation") {
+        const additionalKeys = extraKeys?.[name];
+
         return [
           name,
-          runtime.fn<RouteInput<Actions[string]["route"]>>()((input) => call(name, input), {
-            reactivityKeys: queryKeys,
-          }),
+          runtime.fn<RouteInput<Actions[string]["route"]>>()(
+            (input) =>
+              additionalKeys === undefined
+                ? call(name, input)
+                : Reactivity.mutation(call(name, input), additionalKeys),
+            {
+              reactivityKeys: queryKeys,
+            },
+          ),
         ];
+      }
 
       const query = Atom.family((input: RouteInput<Actions[string]["route"]>) =>
-        runtime.atom(call(name, input)).pipe(runtime.factory.withReactivity(queryKeys)),
+        runtime
+          .atom(call(name, input))
+          .pipe(runtime.factory.withReactivity(queryKeys), Atom.withServerValueInitial),
       );
 
       // Action payload schemas describe the public encoded input. Preserve that
       // relationship while inspecting a heterogeneous table's optional input.
       const payloadSchema = action.route.operation.rpc.payloadSchema as Schema.Top & {
-        readonly Type: RouteInput<Actions[string]["route"]>;
+        readonly Encoded: RouteInput<Actions[string]["route"]>;
       };
 
       const input: unknown = undefined;
 
-      return [name, Schema.is(payloadSchema)(input) ? query(input) : query];
+      if (!Schema.is(Schema.toEncoded(payloadSchema))(input)) return [name, query];
+      if (name !== "getSession" || !hasInitialSession) return [name, query(input)];
+
+      const session = query(input);
+      const seed = AsyncResult.success(initialSession, { waiting: true });
+
+      return [
+        name,
+        Atom.make((get) => {
+          const result = get(session);
+
+          if (get.registry !== initialRegistry || !AsyncResult.isInitial(result))
+            seedAvailable = false;
+
+          return seedAvailable ? seed : result;
+        }).pipe(Atom.withServerValue(() => (seedAvailable ? seed : AsyncResult.initial(true)))),
+      ];
     }),
   );
 
@@ -178,6 +253,7 @@ export const make = Effect.fn("AuthAtom.make")(function* <
   return Object.freeze({
     ...atoms,
     session: atoms.getSession,
+    client: { auth },
     lifetime,
     runtime,
   }) as AuthAtoms<Actions>;

@@ -102,6 +102,8 @@ export const makeSessionApi = <
 
     const signOut = Effect.fn("Auth.signOut")(function* () {
       const request = yield* AuthRequest;
+
+      if (request.beforeMutation !== undefined) yield* request.beforeMutation;
       const credential = request.credentials.session;
 
       if (credential === undefined || Redacted.value(credential) === "") {
@@ -120,6 +122,8 @@ export const makeSessionApi = <
 
     const renewSession = Effect.fn("Auth.renewSession")(function* () {
       const request = yield* AuthRequest;
+
+      if (request.beforeMutation !== undefined) yield* request.beforeMutation;
       const credential = request.credentials.session;
 
       if (credential === undefined) return yield* AuthenticationRequired.make({});
