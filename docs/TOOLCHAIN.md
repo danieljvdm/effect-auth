@@ -93,6 +93,24 @@ the `pr-review-forks` environment with maintainer approval. Review runs execute
 trusted default-branch code and never execute PR-head code with secrets. The
 `pr-review` environment handles same-repository and authorized comment reviews.
 
+## Documentation
+
 Docs use the same VitePress theme, typography, and syntax colors as Effect Agent.
-`vp run docs:build` checks local links and produces a standalone static site.
-Hosting is configured separately when a domain or deployment target is chosen.
+Run `vp run docs:dev` to edit locally. `vp run docs:build` checks local links and
+produces the static site; `vp run docs:preview` serves that build. The home page
+and quick start include the root README's password example, keeping it in one place.
+This contributor guide stays in the repository and is excluded from the public site.
+
+`alchemy.run.ts` deploys the site to `https://effect-auth.com` through the
+`effect-auth-docs` Cloudflare Worker at stage `prod`. It uses the account-wide
+Cloudflare state store, matching Effect Agent.
+Set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in your environment, then run
+`vp run docs:plan --stage prod` to review changes or
+`vp run docs:deploy --stage prod --yes` to deploy. Alchemy builds the docs and
+uses their content hash to avoid unchanged uploads.
+
+The `Deploy docs` workflow runs on relevant changes to `main` and supports manual
+dispatch. Configure repository secrets `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID`; Alchemy resolves the shared state-store credentials from
+the account's Secrets Store. The token must also be able to manage the Worker and
+its custom domain in the selected account.

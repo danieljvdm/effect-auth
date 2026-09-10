@@ -1,31 +1,60 @@
 import { defineConfig } from "vitepress";
 
-import tokyoNightLight from "./theme/tokyo-night-light.json";
+import tokyoNightLight from "./theme/tokyo-night-light.json" with { type: "json" };
 
 export default defineConfig({
   title: "Effect Auth",
   description: "Composable authentication, sessions, and identity workflows for Effect.",
+  lang: "en-US",
   cleanUrls: true,
+  sitemap: { hostname: "https://effect-auth.com" },
+  head: [["link", { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }]],
+  srcExclude: ["TOOLCHAIN.md"],
   markdown: {
     theme: { light: { ...tokyoNightLight, type: "light" }, dark: "tokyo-night" },
   },
   themeConfig: {
     siteTitle: "Effect Auth",
     nav: [
-      { text: "Guide", link: "/guide/authentication" },
-      { text: "Toolchain", link: "/TOOLCHAIN" },
+      { text: "Guide", link: "/guide/getting-started", activeMatch: "/guide/" },
+      { text: "Reference", link: "/reference/modules", activeMatch: "/reference/" },
     ],
     sidebar: [
       {
-        text: "Effect Auth",
+        text: "Start",
         items: [
-          { text: "Authentication", link: "/guide/authentication" },
-          { text: "Toolchain", link: "/TOOLCHAIN" },
+          { text: "Getting started", link: "/guide/getting-started" },
+          { text: "How it fits together", link: "/guide/authentication" },
         ],
+      },
+      {
+        text: "Authentication",
+        items: [
+          { text: "Sessions", link: "/guide/sessions" },
+          { text: "Passwords", link: "/guide/passwords" },
+          { text: "Email, SMS & TOTP", link: "/guide/codes" },
+          { text: "Passkeys", link: "/guide/passkeys" },
+          { text: "OAuth & connected accounts", link: "/guide/oauth" },
+        ],
+      },
+      {
+        text: "Integration",
+        items: [
+          { text: "HTTP & client state", link: "/guide/http-and-client" },
+          { text: "Adapters & persistence", link: "/reference/adapters" },
+          { text: "Examples", link: "/guide/examples" },
+        ],
+      },
+      {
+        text: "Reference",
+        items: [{ text: "Public modules", link: "/reference/modules" }],
       },
     ],
     socialLinks: [{ icon: "github", link: "https://github.com/danieljvdm/effect-auth" }],
     search: { provider: "local" },
+    outline: { level: [2, 3], label: "On this page" },
+    docFooter: { prev: "Previous", next: "Continue" },
+    externalLinkIcon: true,
     editLink: { pattern: "https://github.com/danieljvdm/effect-auth/edit/main/docs/:path" },
   },
 });

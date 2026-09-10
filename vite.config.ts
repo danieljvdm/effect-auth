@@ -160,6 +160,14 @@ export default defineConfig({
       scripts: true,
     },
     tasks: {
+      "docs:deploy": {
+        cache: false,
+        command: "alchemy deploy",
+      },
+      "docs:plan": {
+        cache: false,
+        command: "alchemy plan",
+      },
       "release:publish": {
         cache: false,
         command: "bun scripts/release-publish.ts",
