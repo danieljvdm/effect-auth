@@ -32,9 +32,11 @@ export default defineConfig({
         items: [
           { text: "Sessions", link: "/guide/sessions" },
           { text: "Passwords", link: "/guide/passwords" },
-          { text: "Email, SMS & TOTP", link: "/guide/codes" },
+          { text: "Email codes & magic links", link: "/guide/codes" },
+          { text: "Phone codes", link: "/guide/phone" },
           { text: "Passkeys", link: "/guide/passkeys" },
-          { text: "OAuth & connected accounts", link: "/guide/oauth" },
+          { text: "Two-factor authentication", link: "/guide/totp" },
+          { text: "OAuth", link: "/guide/oauth" },
         ],
       },
       {

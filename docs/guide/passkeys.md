@@ -1,78 +1,134 @@
 ---
-description: Compose WebAuthn ceremonies with explicit protocol, account, and persistence authority.
+description: Begin a passkey ceremony, call the browser, and verify the response.
 ---
 
 # Passkeys
 
-The optional `effect-auth/Passkey` core separates sign-in, registration,
-enrollment, management, pending login, step-up and protected-action capabilities.
-Applications explicitly provide `PasskeyProtocol`, persistence and account
-authority. The maintained verifier is available through the server-only
-`PasskeySimpleWebAuthn` entrypoint. Shared contract imports never install it.
-Browser interaction and database adapters remain separate.
-`effect-auth/PasskeyPassword` binds separate assertion payloads to existing
-prepared password intents. Reset validates the original continuation before
-spending the passkey, and the password owner repeats its final checks.
+Passkey sign-in has three steps: create the challenge on your server, ask the
+browser to authenticate, and verify the response on your server.
 
-## Ceremonies and credential ownership
+## Enable passkeys
 
-Every ceremony binds its purpose, RP/profile, challenge, private browser binder
-and original target authority. A confirmed fixed claim allows one verification;
-interruption or uncertain commit never permits another attempt on that claim.
-Proof freshness uses the original challenge issue instant because WebAuthn does
-not attest the time of the gesture. Failed session or target completion does not
-refund the spent assertion. Registration creates no authentication evidence or
-session; factor-only enrollment remains ineligible for primary sign-in.
+```ts [auth.ts]
+import { Schema } from "effect";
+import { Auth, Passkey } from "effect-auth";
 
-The RP authority owns protocol credential IDs and opaque user handles across
-all same-RP module aliases. Public protocol options necessarily contain opaque
-IDs; management summaries exclude them. The verifier must validate RP domain
-and public-suffix policy, exact origins, UP/UV, signature, credential identity and
-backup eligibility. Core URL checks alone are not a public-suffix authority.
-Single-device positive counters must increase; synced credential observations
-merge without turning telemetry races into a second replay mechanism.
+export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
+  claims: Schema.Struct({ displayName: Schema.String }),
+  strategies: {
+    passkey: Passkey.make({
+      relyingParty: {
+        id: "app.example.com",
+        name: "My app",
+        origins: ["https://app.example.com"],
+      },
+    }),
+  },
+  defaultStrategy: "passkey",
+}) {}
+```
 
-Persistence owners enforce current policy, original semantic revisions, durable
-admission windows, ownership, last usable method and final physical clock guards
-in the same commit as their writes. Retain unresolved provisioning reservations
-and full admission charges independently of ceremony cleanup. Counter, backup
-telemetry and rename preserve semantic revisions; removal or eligibility changes
-advance credential and subject security revisions. Management reports the chosen
-session strategy's actual invalidation window.
+Use your actual relying-party ID and exact allowed origins. Changing these can
+make existing passkeys unusable.
 
-## Server verification
+## Begin sign-in on the server
 
-The optional `effect-auth/PasskeySimpleWebAuthn` adapter implements the passkey
-protocol with SimpleWebAuthn and a maintained public-suffix authority. Register
-explicit RP/profile generations, retaining original profiles while their
-credentials remain usable. Its canonical framing checks preserve the original
-signed bytes.
+```ts [begin-passkey.ts]
+import { Effect } from "effect";
 
-The verifier's ASN.1 parser and decorated key classes must share one resolved
-`@peculiar/asn1-schema` registry. A dependency graph containing separate versions
-can make valid ES256 assertions unavailable; keep that transitive dependency
-deduplicated when updating the maintained verifier.
+import { AppAuth } from "./auth";
 
-The adapter performs no network or persistence work. Effect interruption can
-discard its result but cannot cancel a native WebCrypto operation already in
-progress; the core retains ownership of the spent claim and final freshness
-checks. Browser interaction and database mappings remain separate capabilities.
+export const beginPasskey = Effect.fn("app.beginPasskey")(function* (
+  flowId: string,
+  commandId: string,
+) {
+  const auth = yield* AppAuth;
 
-## Browser ceremonies
+  return yield* auth.signIn({ flowId, commandId, profileId: "default" });
+});
+```
 
-The optional `effect-auth/PasskeyBrowser` capability runs native browser
-ceremonies inside Effect. The application owns Begin/Complete RPCs, request
-binding and session state; React only dispatches the workflow. The helper uses
-maintained conversion/capability helpers, preserves the issued options and
-returns a bounded Redacted response without client extension outputs.
+Return the challenge to the browser. The request-binding credential is delivered
+privately; keep it associated with this flow.
 
-Each request owns its AbortController. Interrupting an Effect requests native
-cancellation and suppresses its result, but cannot undo a credential or signature
-already produced. A started native promise keeps the helper Busy until it
-settles; a broken browser or extension may require a page reload. This module's
-instances coordinate with each other, not third-party calls or separate module
-copies. Conditional authentication requires positive feature detection, an empty
-allow-list and a light-DOM input with a final `webauthn` autocomplete token.
-Capability reports do not reveal whether an account or credential exists.
+## Ask the browser to authenticate
 
-Use the [Studio example](./examples.md#http-and-browser-clients) for composition and [Drizzle passkey mappings](../reference/adapters.md#passkeys) for storage.
+```ts [passkey-browser.ts]
+import { Effect } from "effect";
+import type { PasskeyAuthenticationStarted } from "effect-auth/Passkey";
+import { makeSimpleWebAuthnPasskeyBrowser } from "effect-auth/PasskeyBrowser";
+
+export const authenticate = Effect.fn("app.authenticatePasskey")(function* (
+  started: PasskeyAuthenticationStarted,
+) {
+  const browser = yield* makeSimpleWebAuthnPasskeyBrowser();
+
+  return yield* browser.authenticate({ started, mediation: "required" });
+});
+```
+
+Keep the Effect's Scope open for the ceremony. Interrupting it cancels that
+ceremony. Import `PasskeyBrowser` only in the browser; it requires
+`@simplewebauthn/browser`.
+
+## Complete sign-in on the server
+
+```ts [complete-passkey.ts]
+import { Effect } from "effect";
+
+import { AppAuth } from "./auth";
+
+export const completePasskey = Effect.fn("app.completePasskey")(function* (
+  flowId: string,
+  bindingCredential: string,
+  response: string,
+) {
+  const auth = yield* AppAuth;
+
+  return yield* auth.completeSignIn({ flowId, bindingCredential, response });
+});
+```
+
+Send the browser's serialized response through the protected transport. A session
+is issued only after server verification and the current account checks succeed.
+The [Atom workflow](./http-and-client#compose-a-passkey-workflow) connects these steps.
+
+## Install the server verifier
+
+```ts [passkey-protocol.ts]
+import { layerSimpleWebAuthnPasskeyProtocol } from "effect-auth/PasskeySimpleWebAuthn";
+
+export const PasskeyProtocolLive = layerSimpleWebAuthnPasskeyProtocol({
+  profiles: [
+    {
+      profileId: "default",
+      generation: 1,
+      rpId: "app.example.com",
+      rpName: "My app",
+      origins: ["https://app.example.com"],
+      developmentLocalhost: false,
+      residentKey: "required",
+      userVerification: "required",
+      primarySignIn: true,
+      attestation: "none",
+      algorithms: [-7, -257],
+    },
+  ],
+});
+```
+
+Provide this Layer with your passkey persistence, account/claims services, and
+session configuration. Install its `@simplewebauthn/server` and `tldts` peers.
+Keep the verifier profile consistent with the method's relying-party configuration.
+
+## Registration and management
+
+| Task                                   | Strategy and methods                                                             |
+| -------------------------------------- | -------------------------------------------------------------------------------- |
+| Create an account with a passkey       | `Passkey.makeRegistration` → `register`, `completeRegistration`.                 |
+| Add, list, rename, or remove a passkey | `Passkey.makeManagement` and its authenticated operations.                       |
+| Confirm a protected password change    | `effect-auth/PasskeyPassword` binds the assertion to a prepared password intent. |
+
+These require explicit application authority. A registration ceremony must not
+silently become a login ceremony or link an existing account. See
+[passkey persistence](../reference/adapters#passkeys) for transaction ownership.

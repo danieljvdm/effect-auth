@@ -1,65 +1,97 @@
 ---
-description: Understand application ownership, authentication methods, and private credential delivery.
+description: See how methods, sessions, and application services connect.
 ---
 
 # How it fits together
 
-Effect Auth supplies authentication workflows as Effect services. Your application chooses its identity model, storage, policy, and delivery. Start with [Getting started](./getting-started.md) for a small definition.
+Your app owns users and storage. Effect Auth verifies authentication methods and
+issues sessions through those services.
 
-| Effect Auth owns                         | Your application supplies                            |
-| ---------------------------------------- | ---------------------------------------------------- |
-| Method verification and typed operations | Account lookup, provisioning, and claim construction |
-| Session and proof contracts              | Storage, keys, and session policy                    |
-| Commit and retry boundaries              | A transaction or batch authority                     |
-| Private credential commands              | Cookies, secure storage, email, and SMS delivery     |
+```text
+your request handler
+  → AppAuth
+      → password / passkey / email / OAuth
+          → verify evidence
+          → your account authority
+          → session persistence
+      → public result
+  → private cookie delivery
+```
 
-## Compose authentication methods
+## One service, named methods
 
-`Password.make`, `Passkey.make`, `PhoneOtp.make`, and `Sessions.make` are available
-through named root namespaces or their explicit module subpaths. Selected strategies
-include portable implementation layers where appropriate; applications supply
-protocol verification, persistence, account authority, and delivery through
-Effect requirements. Keys and session policy remain
-explicit configuration.
-Strategies share the bound session contracts and require their runtime completion
-service. Ordinary setup needs no separate strategy tags or session constructor.
-Explicit namespace overrides retain existing credential and operation identities
-when migrating configuration. A shared namespace identifies the same logical
-installation and requires compatible claims, registration codecs, and policy.
-Use distinct namespaces for incompatible installations, including when merging
-adapter Layers. Password sign-in alone does not acquire registration, recovery,
-or new-password services.
+```ts [auth.ts]
+import { Effect, Schema } from "effect";
+import { Auth, Passkey, Password } from "effect-auth";
 
-## Requests and credential delivery
+export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
+  claims: Schema.Struct({ displayName: Schema.String }),
+  strategies: {
+    password: Password.make(),
+    passkey: Passkey.make({
+      relyingParty: {
+        id: "app.example.com",
+        name: "My app",
+        origins: ["https://app.example.com"],
+      },
+    }),
+  },
+  defaultStrategy: "password",
+}) {}
 
-The host supplies `AuthRequest` for each request or native workflow, including
-trusted caller identity and private credential delivery. Keep it outside shared
-Layers. Public results never include credential commands. Password sign-in
-creates a fresh flow on each execution; commands whose IDs support replay still
-require the caller's original ID. No call automatically retries a mutation.
+export const signIn = Effect.fn("app.signIn")(function* (email: string, password: string) {
+  const auth = yield* AppAuth;
 
-## Operations
+  return yield* auth.signIn({ email, password });
+});
 
-`effect-auth/Operations` owns validated local invocation and shared RPC handler
-boundaries. Caller identity is trusted application input supplied per invocation,
-never part of an operation payload. Applications explicitly select remotely
-exposed operations; an RPC definition alone does not expose an endpoint.
+export const beginPasskey = Effect.fn("app.beginPasskey")(function* (
+  flowId: string,
+  commandId: string,
+) {
+  const auth = yield* AppAuth;
 
-## Identity
+  return yield* auth.signIn("passkey", { flowId, commandId, profileId: "default" });
+});
+```
 
-`effect-auth/Identity` owns application-neutral identity lifecycle contracts.
-Consumers retain their native keys, schema, and provisioning authority. An
-adapter must enforce uniqueness, last-method protection, and cleanup atomically
-or return an explicit pending recovery outcome. Key codecs reject lossy mappings.
-The identity examples demonstrate independent UUID and numeric-key consumers.
+Method inputs and results come from the selected strategy. Adding a method adds
+its required services to the Layer's type.
 
-## Lifecycle hooks
+## What goes where
 
-`effect-auth/Hooks` owns ordered lifecycle contributions and commit event
-coordination. The consumer's actual transaction or batch owner controls when
-events become committed. Direct postcommit delivery is best effort; durable
-delivery requires an outbox in that same authority and consumer-owned retries.
-Plugins use ordinary operation and service Layers, with static metadata only
-for contributions that need aggregation.
+```text
+src/
+├─ auth.ts             # claims and method selection
+├─ auth-config.ts      # session policy, keys, allowed origins
+├─ auth-persistence.ts # database mappings and transaction authority
+├─ auth-accounts.ts    # account lookup, claims, provisioning
+├─ auth-http.ts        # selected routes and cookie policy
+└─ auth-client.ts      # queries, mutations, and UI workflows
+```
 
-Authentication resources live in the caller’s `Scope`. See [Sessions](./sessions.md) for commit and invalidation behavior, [HTTP and client state](./http-and-client.md) for transport, and [Adapters](../reference/adapters.md) for persistence requirements.
+Keep `Auth.AuthRequest` local to each request. Keep reusable services in Layers
+whose resources belong to the application's Scope.
+
+## Results and credentials
+
+| Value                                                    | Where it goes                       |
+| -------------------------------------------------------- | ----------------------------------- |
+| Session claims, public status, challenge reference       | Operation result.                   |
+| Session cookie, request binding, continuation credential | Private credential command sink.    |
+| TOTP enrollment secret, recovery codes                   | Explicit, temporary private reveal. |
+
+The [HTTP adapter](./http-and-client) implements these transport boundaries.
+[Effect Atom](./http-and-client#connect-client-state) composes the browser workflow.
+
+## Commit order matters
+
+```text
+prepare mutation → commit your transaction → read receipt → deliver credentials
+```
+
+`LifecycleHooks` run around these boundaries. A durable notification needs an
+outbox in the same transaction. If the commit outcome is unknown, look it up
+through the owning adapter; never assume repeating credential issuance is safe.
+
+Continue with [sessions](./sessions) or [database adapters](../reference/adapters).

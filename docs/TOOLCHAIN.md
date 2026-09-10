@@ -98,7 +98,7 @@ trusted default-branch code and never execute PR-head code with secrets. The
 Docs use the same VitePress theme, typography, and syntax colors as Effect Agent.
 Run `vp run docs:dev` to edit locally. `vp run docs:build` checks local links and
 produces the static site; `vp run docs:preview` serves that build. The home page
-and quick start include the root README's password example, keeping it in one place.
+includes the root README's password example. Guides show feature setup and usage.
 This contributor guide stays in the repository and is excluded from the public site.
 
 `alchemy.run.ts` deploys the site to `https://effect-auth.com` through the
