@@ -12,7 +12,7 @@
     "patch:tsgo": "effect-tsgo patch --typescript",
     "changeset": "bun x changeset",
     "changeset:version": "bun x changeset version",
-    "ci:version": "vp run changeset:version && vp install",
+    "ci:version": "bun x changeset version && bun install",
     "check": "vp check && vp run -r --concurrency-limit 1 check && vp run check:scripts && vp run check:exports && vp run verify:package-purity",
     "check:scripts": "tsc --noEmit -p scripts/tsconfig.json",
     "check:exports": "bun scripts/verify-package-exports.ts",

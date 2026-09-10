@@ -41,7 +41,7 @@ jobs:
           bun-version: 1.4.0
 
       - name: Install dependencies (frozen, scripts suppressed)
-        run: bun x --bun vite-plus@0.3.0 install --frozen-lockfile --ignore-scripts
+        run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Patch Effect TypeScript-Go
         run: ./node_modules/.bin/vp run patch:tsgo
