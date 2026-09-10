@@ -1,4 +1,4 @@
-import { Context, Effect, Exit, Layer, Option, Result, Schema, Scope, type Types } from "effect";
+import { Context, Effect, Exit, Layer, Option, Schema, Scope, type Types } from "effect";
 
 import { make as makeContract, type AnyAuthContract } from "../operations/actions";
 import type { AuthenticationAuthority } from "../sessions/AuthenticationAuthority";
@@ -347,7 +347,7 @@ const service =
   };
 
 /** Define one yieldable auth service, its schemas, extension ports and runtime Layer. */
-const defineService = <
+const makeService = <
   const Id extends string,
   Claims extends ClaimsCodec,
   const S extends StrategySelection = {},
@@ -374,9 +374,10 @@ const defineService = <
   return service<AuthService<Id, Claims["Type"]>>()(id, definition, definition.make);
 };
 
-/** Bind a shared contract to local implementations, or define a local service
- * directly. Both forms resolve AuthRequest at execution time. */
-export function define<
+/** Create a yieldable auth service from a shared contract or service identifier.
+ * Use its Layer for provisioning, or yield its make Effect for direct construction.
+ * AuthRequest is resolved when a method executes. */
+export function make<
   Contract extends AnyAuthContract,
   const S extends StrategySelection = {},
   const Default extends keyof S | undefined = undefined,
@@ -396,7 +397,7 @@ export function define<
     "claims" | "namespace" | "sessionNamespace"
   >,
 ): ReturnType<
-  typeof defineService<
+  typeof makeService<
     Contract["namespace"],
     Contract["claims"],
     S,
@@ -408,7 +409,7 @@ export function define<
   >
 >;
 
-export function define<
+export function make<
   const Id extends string,
   Claims extends ClaimsCodec,
   const S extends StrategySelection = {},
@@ -419,9 +420,9 @@ export function define<
 >(
   id: Id,
   options: Options<Claims, S, Default, Namespace, SessionId, Id, Sessions>,
-): ReturnType<typeof defineService<Id, Claims, S, Default, Namespace, SessionId, Sessions>>;
+): ReturnType<typeof makeService<Id, Claims, S, Default, Namespace, SessionId, Sessions>>;
 
-export function define(
+export function make(
   definition: string | AnyAuthContract,
   options: {
     readonly claims?: ClaimsCodec;
@@ -433,7 +434,7 @@ export function define(
   },
 ): unknown {
   if (typeof definition !== "string") {
-    return defineService(
+    return makeService(
       definition.namespace,
       {
         ...options,
@@ -447,37 +448,13 @@ export function define(
   if (options.claims === undefined) throw AuthConfigurationError.make({ reason: "method" });
   const namespace = options.namespace ?? definition;
 
-  return defineService(definition, {
+  return makeService(definition, {
     ...options,
     namespace,
     sessionNamespace: options.sessionNamespace ?? `${namespace}/sessions`,
     claims: options.claims,
   });
 }
-
-/** Construct auth directly within the caller's Scope, without a named service. */
-export const make = <
-  Claims extends ClaimsCodec,
-  const S extends StrategySelection = {},
-  const Default extends keyof S | undefined = undefined,
-  const Id extends string = "effect-auth",
-  const SessionId extends string = `${Id}/sessions`,
-  const Sessions extends SessionConfiguration | undefined = undefined,
->(
-  options: Options<Claims, S, Default, Id, SessionId, "effect-auth", Sessions>,
-) => {
-  const definition = Result.try(() => bind<Claims, S, Default, Id, SessionId, Sessions>(options));
-
-  return Effect.gen(function* () {
-    if (Result.isFailure(definition)) {
-      if (Schema.is(AuthConfigurationError)(definition.failure)) return yield* definition.failure;
-
-      return yield* Effect.die(definition.failure);
-    }
-
-    return yield* definition.success.make;
-  });
-};
 
 /** Class form of the same auth definition, for applications using named service classes. */
 export const Service =

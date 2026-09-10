@@ -5,7 +5,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 import { Claims, ProfileApi, SessionHttp } from "./session-contract";
 
-export const AppAuth = Auth.define("example/session-auth", {
+export const AppAuth = Auth.make("example/session-auth", {
   claims: Claims,
   sessions: Sessions.stateful({ idleTimeout: "7 days", maxAge: "30 days" }),
 });

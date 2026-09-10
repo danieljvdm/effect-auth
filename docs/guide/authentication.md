@@ -32,7 +32,7 @@ import * as AuthHttp from "effect-auth/Http";
 
 import { AuthApi } from "./auth-contract";
 
-export const AppAuth = Auth.define(AuthApi, {
+export const AppAuth = Auth.make(AuthApi, {
   sessions: Sessions.stateful({ idleTimeout: "7 days", maxAge: "30 days" }),
   strategies: { password: Password.make() },
   defaultStrategy: "password",
@@ -157,7 +157,7 @@ their original absolute expiry.
 For local composition without additional shared actions, keep the identifier form:
 
 ```ts
-const LocalAuth = Auth.define("app/LocalAuth", {
+const LocalAuth = Auth.make("app/LocalAuth", {
   claims: Schema.Struct({ displayName: Schema.String }),
   sessions: Sessions.stateful(),
 });
@@ -174,7 +174,9 @@ completion authority. Other method bundles do not acquire completion authority;
 custom bundles request it with `Auth.makeStrategy(methods, layer, { completion: true })`. Applications needing custom completion, pending factors,
 or runtime-selected session Layers omit `sessions` and supply those services
 through ordinary Layers. `Auth.Service<Self>()` is the class form of the same
-service; `Auth.make` constructs its capabilities directly in the caller's Scope.
+service. `Auth.make` creates the service definition synchronously; `AppAuth.layer`
+provides an instance, while `yield* AppAuth.make` constructs one directly in the
+caller's Scope.
 
 All shared HTTP actions use POST, including queries, with the existing operation
 request/response envelope. The contract owns paths through its `basePath` option,

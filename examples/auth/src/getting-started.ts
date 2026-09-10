@@ -24,7 +24,7 @@ export const makeApplicationAuth = (configuration: {
   readonly sessions: Sessions.SessionOptions;
   readonly origin: string;
 }) => {
-  const AppAuth = Auth.define("app/Auth", {
+  const AppAuth = Auth.make("app/Auth", {
     claims: AccountClaims,
     sessions: Sessions.stateful(configuration.sessions),
     strategies: {

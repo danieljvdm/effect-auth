@@ -79,7 +79,7 @@ const code = {
   policy: proofPolicy,
 };
 
-export const emailAuth = Auth.define("example/email-auth", {
+export const emailAuth = Auth.make("example/email-auth", {
   claims: Claims,
   sessionNamespace: "example/email-sessions",
   defaultStrategy: "code",

@@ -4,7 +4,7 @@ import * as AuthHttp from "effect-auth/Http";
 
 import { AuthApi } from "./auth-contract";
 
-export const AppAuth = Auth.define(AuthApi, {
+export const AppAuth = Auth.make(AuthApi, {
   sessions: Sessions.stateful(),
   strategies: { password: Password.make() },
   defaultStrategy: "password",
