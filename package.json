@@ -35,9 +35,9 @@
     "@effect/tsgo": "catalog:",
     "@fontsource-variable/ibm-plex-sans": "catalog:",
     "@fontsource/ibm-plex-mono": "catalog:",
-    "@shikijs/vitepress-twoslash": "catalog:",
     "@stylistic/eslint-plugin": "5.10.0",
     "@types/node": "catalog:",
+    "alchemy": "catalog:",
     "effect": "catalog:",
     "effect-auth": "workspace:*",
     "effect-cf": "catalog:",
@@ -69,7 +69,6 @@
     "@effect/vitest": "4.0.0-rc.112",
     "@fontsource-variable/ibm-plex-sans": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
-    "@shikijs/vitepress-twoslash": "4.4.2",
     "@types/node": "26.1.2",
     "effect": "4.0.0-rc.112",
     "effect-cf": "0.40.0",
@@ -97,6 +96,7 @@
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "openid-client": "6.8.8",
     "tldts": "7.4.11",
-    "@effect/platform-node-shared": "4.0.0-rc.112"
+    "@effect/platform-node-shared": "4.0.0-rc.112",
+    "alchemy": "2.0.0-beta.72"
   }
 }

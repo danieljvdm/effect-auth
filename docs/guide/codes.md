@@ -1,0 +1,190 @@
+---
+description: Send email codes, verify them, and finish sign-in.
+---
+
+# Email codes and magic links
+
+Email sign-in is a short flow: bind the request, send a proof, verify it, then
+complete sign-in.
+
+## Enable email codes
+
+```ts [auth.ts]
+import { Schema } from "effect";
+import { Auth, Email } from "effect-auth";
+
+import { proofKeys, proofPolicy } from "./auth-config";
+
+export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
+  claims: Schema.Struct({ displayName: Schema.String }),
+  strategies: {
+    email: Email.makeCode({
+      template: "sign-in-code",
+      digits: 6,
+      keys: proofKeys,
+      policy: proofPolicy,
+    }),
+  },
+  defaultStrategy: "email",
+}) {}
+```
+
+`proofKeys` is your secret-managed proof keyring. Set expiry and attempt limits
+in `proofPolicy`; its full shape is shown below.
+
+## Start the flow and send a code
+
+```ts [request-code.ts]
+import { Effect } from "effect";
+
+import { AppAuth } from "./auth";
+
+export const beginEmail = Effect.fn("app.beginEmail")(function* (flowId: string) {
+  const auth = yield* AppAuth;
+
+  return yield* auth.beginSignIn({ flowId });
+});
+
+export const requestCode = Effect.fn("app.requestCode")(function* (
+  flowId: string,
+  requestId: string,
+  requestBinding: string,
+  email: string,
+) {
+  const auth = yield* AppAuth;
+
+  return yield* auth.signIn({
+    flowId,
+    requestId,
+    requestBinding,
+    email,
+    returnTarget: "/account",
+    locale: "en",
+  });
+});
+```
+
+`beginEmail` delivers a private request-binding credential. The next handler reads
+it from the request cookie. `requestCode` returns a proof `reference`, not the code.
+Your `EmailProofDelivery` service sends the code.
+
+## Verify the code
+
+```ts [verify-code.ts]
+import { Effect } from "effect";
+import type { ProofReference } from "effect-auth/Proofs";
+
+import { AppAuth } from "./auth";
+
+export const verifyCode = Effect.fn("app.verifyCode")(function* (
+  flowId: string,
+  requestBinding: string,
+  email: string,
+  reference: typeof ProofReference.Encoded,
+  code: string,
+) {
+  const auth = yield* AppAuth;
+
+  return yield* auth.verifySignIn({
+    flowId,
+    requestBinding,
+    email,
+    reference,
+    secret: code,
+    returnTarget: "/account",
+  });
+});
+```
+
+Keep the returned `continuation.continuationId`. Its matching credential is
+privately delivered to the originating client.
+
+## Complete sign-in
+
+```ts [complete-email.ts]
+import { Effect } from "effect";
+
+import { AppAuth } from "./auth";
+
+export const completeEmail = Effect.fn("app.completeEmail")(function* (
+  flowId: string,
+  requestBinding: string,
+  email: string,
+  continuationId: string,
+  credential: string,
+) {
+  const auth = yield* AppAuth;
+
+  return yield* auth.completeSignIn({
+    flowId,
+    requestBinding,
+    email,
+    continuationId,
+    credential,
+    returnTarget: "/account",
+  });
+});
+```
+
+Check `result.completion._tag` before granting access. Only `Authenticated`
+contains a session. The [HTTP adapter](./http-and-client) maps private credentials
+to cookies so they stay out of ordinary browser payloads.
+
+## Use a magic link instead
+
+```ts [magic-link.ts]
+import { Email } from "effect-auth";
+
+import { proofPolicy } from "./auth-config";
+
+export const magicLink = Email.makeLink({
+  template: "sign-in-link",
+  policy: proofPolicy,
+});
+```
+
+Use this strategy with the same begin → request → verify → complete flow.
+`makeMagicLinkRenderer` places the secret in the URL fragment. A landing-page GET
+must not consume it: show a confirmation action, clear the fragment from browser
+history, and complete from the originating client.
+
+<details>
+<summary>Proof expiry and rate limits</summary>
+
+```ts [proof-policy.ts]
+import type { ProofPolicy } from "effect-auth/Proofs";
+
+export const proofPolicy: ProofPolicy = {
+  lifetimeMillis: 5 * 60_000,
+  continuationLifetimeMillis: 30_000,
+  maximumFailedAttempts: 5,
+  maximumDeliveryAttempts: 1,
+  deliveryClaimMillis: 10_000,
+  deliveryRetryMillis: 30_000,
+  requestRetentionMillis: 60 * 60_000,
+  abuse: {
+    issues: { limit: 5, windowMillis: 60 * 60_000 },
+    attempts: { limit: 10, windowMillis: 5 * 60_000 },
+    subjectIssues: { limit: 5, windowMillis: 60 * 60_000 },
+    subjectAttempts: { limit: 10, windowMillis: 5 * 60_000 },
+    actionIssues: { limit: 1000, windowMillis: 60 * 60_000 },
+    actionAttempts: { limit: 1000, windowMillis: 5 * 60_000 },
+    resendCooldownMillis: 30_000,
+  },
+};
+```
+
+Choose the action-wide limits for your application's traffic. Resending or changing
+flow IDs must not reset account-level attempt budgets.
+
+</details>
+
+## Supply the services
+
+Provide `EmailSignInTargets`, `AppAuth.strategies.email.ClaimsForEmail`,
+`ProofPersistence`, `EmailProofDelivery`, and `EmailReturnTargets`, plus session
+and request-binding services. Use an exact return-route allowlist.
+
+For new accounts use `Email.makeRegistration`; for verified-address management
+use `Email.makeAddresses`. Verification alone does not sign in or link an account.
+See [email persistence](../reference/adapters#email) for those transaction boundaries.

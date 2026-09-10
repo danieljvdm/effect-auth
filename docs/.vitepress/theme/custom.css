@@ -17,7 +17,6 @@
   --vp-c-brand-3: #1936a2;
   --vp-c-brand-soft: rgba(49, 91, 232, 0.1);
   --vp-code-block-bg: #ffffff;
-  --twoslash-popup-bg: var(--vp-code-block-bg);
   --vp-button-brand-bg: #1b1d23;
   --vp-button-brand-hover-bg: #315be8;
   --vp-button-brand-active-bg: #2448c8;
@@ -299,11 +298,6 @@ body::before {
 .ea-home__code .tabs {
   margin: 0;
   border-radius: 7px 7px 0 0;
-}
-
-.twoslash-floating .twoslash-popup-code {
-  max-height: min(60vh, 420px);
-  overflow: auto;
 }
 
 .ea-home__code div[class*="language-"] {
