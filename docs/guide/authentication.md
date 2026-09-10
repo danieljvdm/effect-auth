@@ -8,6 +8,105 @@ Auth resources live in the caller's Scope.
 Start with [application composition](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/getting-started.ts) or the runnable
 [password example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/password-methods.ts).
 
+Define a yieldable auth service once. A session-only service needs its selected
+session backend; it does not acquire authentication or provisioning authority.
+
+```ts
+import { Effect, Layer, Schema } from "effect";
+import { Auth, Sessions } from "effect-auth";
+import * as AuthHttp from "effect-auth/Http";
+
+export const AppAuth = Auth.define("app/Auth", {
+  claims: Schema.Struct({ displayName: Schema.String }),
+  sessions: Sessions.stateful({ idleTimeout: "7 days", maxAge: "30 days" }),
+});
+
+// The adapter supplies AppAuth.sessions.StatefulSessionPersistence and SessionRepository.
+const AuthLive = AppAuth.layer.pipe(Layer.provide(SessionStoreLive));
+
+const http = AuthHttp.make(AppAuth, { origin: "https://app.example.com" });
+const Routes = Layer.mergeAll(
+  http.routes({ session: "/auth/session", signOut: "/auth/sign-out" }),
+  ApplicationRoutes,
+).pipe(http.middleware, Layer.provide(AuthLive));
+```
+
+Within a route covered by the middleware, call the service directly:
+
+```ts
+const currentMember = Effect.fn("app.currentMember")(function* () {
+  const auth = yield* AppAuth;
+  const session = yield* auth.requireSession();
+  return { subjectId: session.subjectId, name: session.claims.displayName };
+});
+
+// Inside an Effect handler:
+const auth = yield * AppAuth;
+const optional = yield * auth.getSession();
+const signedOut = yield * auth.signOut();
+```
+
+`getSession()` returns `null` for missing or invalid credentials. Availability
+failures, defects, and interruption remain failures; they never become anonymous
+successes. `requireSession()` fails with `AuthenticationRequired` when anonymous.
+Session claims remain the application's exact decoded type. Application profile
+lookups and response projections belong to the application.
+
+`signOut()` reads the incoming credential without first verifying it. Its result
+reports `revoked`, `already-invalid`, `client-only`, or `SessionSignOutUnavailable`;
+local clearing does not claim successful server revocation. `renewSession()` is
+explicit: session reads never silently rotate credentials. Outside a request,
+`verifySession(redactedCredential)` verifies a supplied credential without cookie
+or delivery requirements.
+
+`Sessions.stateful`, `Sessions.stateless`, and `Sessions.stateAssisted` select the
+backend. Signed modes require an explicit `keys` keyring. Defaults are a seven-day
+idle timeout (bounded by maximum age), thirty-day maximum age, renewal after one
+day (bounded by half the idle timeout), generation 1, and a 4096-byte token limit.
+Issuer and audience default to the stable session namespace. Override these
+options when retaining an existing installation. After reducing maximum age,
+retain `maximumIssuedAge` through the lifetime of previously issued tokens.
+Pure stateless sign-out only clears the current client: existing tokens retain
+their original absolute expiry.
+
+Add authentication methods with `strategies` and optionally `defaultStrategy`.
+Authentication methods share the selected session implementation and default
+completion authority. Other method bundles do not acquire completion authority;
+custom bundles request it with `Auth.makeStrategy(methods, layer, { completion: true })`. Applications needing custom completion, pending factors,
+or runtime-selected session Layers omit `sessions` and supply those services
+through ordinary Layers. `Auth.Service<Self>()` is the class form of the same
+service; `Auth.make` constructs its capabilities directly in the caller's Scope.
+`Auth.define` takes the stable service identifier as its first argument.
+
+The HTTP adapter mounts only selected endpoints: session lookup is GET; sign-out
+and optional renewal are POST. Browser writes require the configured Origin,
+JSON content type, and `x-effect-auth-csrf: 1` by default. Read requests need no
+CSRF header. Cookie defaults are `Secure`, `HttpOnly`, `SameSite=Lax`, path `/`,
+and the `__Host-effect-auth-` prefix. Override `cookie.name` for the session slot,
+`cookie.prefix` for all slots, or `csrf` for a different header/value. Plain HTTP
+development requires an explicit `cookie.secure: false` override. Duplicate
+credential cookies and unauthorized origins are rejected. Session responses are
+not cacheable.
+
+`http.middleware` wraps raw HttpRouter or HttpApi route Layers. It installs fresh
+request credentials and private collectors for each request, and delivers
+commands as cookies on the completed response. It does not make every endpoint
+require authentication; protected application handlers call `requireSession()`.
+For declarative HttpApi protection, define `makeSessionHttpContract` from the
+pure `SessionContract` module beside the shared API. Add its `RequireSession`
+middleware to protected endpoints or groups, and yield its typed `CurrentSession`
+in handlers. Supply `http.securityLayer(contract)` when building the API, then
+apply `http.middleware` to the route Layer. The security contract declares 401
+for absent/invalid sessions and 503 for unavailable verification; its cookie name
+must match the adapter. See the small [shared session contract](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/session-contract.ts)
+and [session HTTP example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/session-http.ts).
+
+`http.withRequest` wraps a custom Effect returning an HttpServerResponse.
+`http.operationLayer` supplies the same browser policy and caller resolution to
+existing `OperationHttpServer` contracts. Those contracts continue to own private
+payload injection and explicitly selected reveals. Custom response workflows
+must encode their expected failures before leaving the request wrapper.
+
 `Password.make`, `Passkey.make`, `PhoneOtp.make`, and `Sessions.make` are available
 through named root namespaces or their explicit module subpaths. Selected strategies
 include portable implementation layers where appropriate; applications supply
@@ -28,9 +127,9 @@ The root import does not load their peer dependencies. Internal code imports own
 modules directly; Oxlint checks public indexes and rejects internal barrels and
 package self-imports.
 
-The host supplies `AuthRequest` for each request or native workflow, including
-trusted caller identity and private credential delivery. Keep it outside shared
-Layers. Public results never include credential commands. Password sign-in
+The HTTP adapter supplies `AuthRequest`. A custom or native host provides its
+trusted invocation, private incoming `credentials` by slot, and credential delivery
+sink for each workflow. Keep this context outside shared Layers. Public results never include credential commands. Password sign-in
 creates a fresh flow on each execution; commands whose IDs support replay still
 require the caller's original ID. No call automatically retries a mutation.
 

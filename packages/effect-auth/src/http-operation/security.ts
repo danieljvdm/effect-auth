@@ -9,7 +9,7 @@ import { OperationHttpServerConfig } from "./OperationHttpServerConfig";
 
 export const requestSecurity = Effect.fn("OperationHttp.requestSecurity")(function* (
   request: Request,
-  callback: boolean,
+  kind: "operation" | "callback" | "read",
 ) {
   const config = yield* OperationHttpServerConfig;
 
@@ -26,14 +26,14 @@ export const requestSecurity = Effect.fn("OperationHttp.requestSecurity")(functi
 
   if (native) {
     if (
-      callback ||
+      kind === "callback" ||
       requestOrigin !== null ||
       request.headers.has("sec-fetch-mode") ||
       request.headers.has("cookie")
     )
       return yield* OperationHttpError.make({ reason: "origin" });
     yield* config.native!.authorize(request);
-  } else if (!callback) {
+  } else if (kind === "operation") {
     if (requestOrigin === null || !config.trustedOrigins.includes(requestOrigin))
       return yield* OperationHttpError.make({ reason: "origin" });
     if (
@@ -43,6 +43,8 @@ export const requestSecurity = Effect.fn("OperationHttp.requestSecurity")(functi
     )
       return yield* OperationHttpError.make({ reason: "csrf" });
   }
+  if (kind === "read" && requestOrigin !== null && !config.trustedOrigins.includes(requestOrigin))
+    return yield* OperationHttpError.make({ reason: "origin" });
   const rawCookie = request.headers.get("cookie") ?? "";
 
   if (rawCookie.length > 65536) return yield* OperationHttpError.make({ reason: "too-large" });

@@ -342,7 +342,11 @@ export const make = <
           return yield* OperationHttpError.make({ reason: "method" });
         if (callback === undefined && url.search !== "")
           return yield* OperationHttpError.make({ reason: "request" });
-        const security = yield* requestSecurity(request, callback !== undefined);
+
+        const security = yield* requestSecurity(
+          request,
+          callback === undefined ? "operation" : "callback",
+        );
 
         const raw =
           callback === undefined
@@ -401,6 +405,7 @@ export const make = <
           Context.add(Scope.Scope, requestScope),
           Context.add(AuthRequest, {
             invocation: trusted,
+            credentials: security.credentials,
             credentialCommandSink: sink,
             revealCommandCollector: collector,
           }),

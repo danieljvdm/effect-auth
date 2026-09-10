@@ -493,6 +493,7 @@ export const makeEmailSignInModule = <
           Layer.provide(defaultLayer(binding.RequestBinding, binding.layer)),
           Layer.provide([cryptoLayer, hooksLayer]),
         ),
+        { completion: true },
       ),
       SignIn,
       layer,

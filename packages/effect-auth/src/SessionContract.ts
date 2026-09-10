@@ -1,3 +1,5 @@
+export { makeSessionHttpContract } from "./http/session-contract";
+
 import { Schema } from "effect";
 
 import { HookDenied } from "./hooks/models";

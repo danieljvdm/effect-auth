@@ -1,7 +1,15 @@
 import { Context, Effect, Exit, Layer, Option, Result, Schema, Scope, type Types } from "effect";
 
-import { makeSessionModule } from "../sessions/module";
+import type { AuthenticationAuthority } from "../sessions/AuthenticationAuthority";
+import {
+  configuredLayer,
+  type SessionConfiguration,
+  type SessionRequirements,
+} from "../sessions/configuration";
+import type { SessionConfigurationError } from "../sessions/errors";
+import { makeSessionModule, type ModuleService } from "../sessions/module";
 import { AuthConfigurationError } from "./AuthConfigurationError";
+import { cryptoLayer, hooksLayer } from "./defaults";
 import type {
   BoundSelection,
   BoundStrategies,
@@ -9,8 +17,31 @@ import type {
   ClaimsCodec,
   StrategySelection,
 } from "./definition";
+import { makeSessionApi } from "./session";
 
 type Strategies = Readonly<Record<string, Strategy>>;
+type CompletionOf<S> = S extends { readonly completion: infer C } ? C : false;
+
+const withConstructionLayer = <A, E, R, Provided, E2, R2>(
+  create: Effect.Effect<A, E, R>,
+  layer: Layer.Layer<Provided, E2, R2>,
+) =>
+  Effect.gen(function* () {
+    const current = yield* Effect.serviceOption(Layer.CurrentMemoMap);
+    const memoMap = Option.isSome(current) ? current.value : yield* Layer.makeMemoMap;
+    const scope = yield* Scope.fork(yield* Effect.scope);
+
+    return yield* Effect.gen(function* () {
+      const services = yield* Layer.buildWithMemoMap(layer, memoMap, scope);
+
+      return yield* create.pipe(
+        Effect.provide(services),
+        Scope.provide(scope),
+        Effect.provideService(Layer.CurrentMemoMap, memoMap),
+      );
+    }).pipe(Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))));
+  });
+
 type Api<S extends Strategy> = Effect.Success<S["make"]>;
 type StrategyMethod<S extends Strategy> = S extends Strategy ? Api<S>[keyof Api<S>] : never;
 type MethodNames<S extends Strategies> = S[keyof S] extends infer Strategy
@@ -54,9 +85,12 @@ export type Options<
   Id extends string = "effect-auth",
   SessionId extends string = `${Id}/sessions`,
   DefaultId extends string = "effect-auth",
+  Sessions extends SessionConfiguration | undefined = undefined,
 > = {
   readonly claims: Claims;
-  readonly strategies: S & Record<Exclude<keyof S, string>, never>;
+  readonly strategies?: S & Record<Exclude<keyof S, string>, never>;
+  /** Omit when supplying a custom SessionStrategy and completion through Layers. */
+  readonly sessions?: Sessions;
   readonly defaultStrategy?: Default;
 } & Names<Id, SessionId, DefaultId>;
 
@@ -99,7 +133,12 @@ const build = Effect.fn("Auth.make")(function* <
 
     const names = new Set([...methodsByStrategy.values()].flatMap((api) => Object.keys(api)));
 
-    if (names.has("then")) return yield* AuthConfigurationError.make({ reason: "method" });
+    if (
+      ["then", "getSession", "requireSession", "verifySession", "signOut", "renewSession"].some(
+        (name) => names.has(name),
+      )
+    )
+      return yield* AuthConfigurationError.make({ reason: "method" });
 
     const api = Object.fromEntries(
       [...names].map((name) => [
@@ -149,7 +188,7 @@ const configurationError = (
     return AuthConfigurationError.make({ reason: "namespace" });
   const entries = Object.entries(strategies);
 
-  if (entries.length === 0 || entries.some(([key]) => !Schema.is(strategyNameSchema)(key)))
+  if (entries.some(([key]) => !Schema.is(strategyNameSchema)(key)))
     return AuthConfigurationError.make({ reason: "strategies" });
   if (defaultStrategy !== undefined && !Object.hasOwn(strategies, defaultStrategy))
     return AuthConfigurationError.make({ reason: "default-strategy" });
@@ -165,14 +204,15 @@ const configurationError = (
 };
 
 /** Bind schemas and service keys once, before choosing the application's adapter Layers. */
-export const define = <
+const bind = <
   Claims extends ClaimsCodec,
-  const S extends StrategySelection,
+  const S extends StrategySelection = {},
   const Default extends keyof S | undefined = undefined,
   const Id extends string = "effect-auth",
   const SessionId extends string = `${Id}/sessions`,
+  const Sessions extends SessionConfiguration | undefined = undefined,
 >(
-  options: Options<Claims, S, Default, Id, SessionId>,
+  options: Options<Claims, S, Default, Id, SessionId, "effect-auth", Sessions>,
 ) => {
   const strategies = { ...options.strategies };
   const defaultStrategy = options.defaultStrategy;
@@ -203,28 +243,117 @@ export const define = <
     Object.entries(modules).map(([key, module]) => [key, module.strategy]),
   ) as BoundSelection<typeof modules>;
 
+  const create = Effect.gen(function* () {
+    const api = yield* build(selected, defaultStrategy);
+    const sessionApi = yield* makeSessionApi(sessions);
+
+    return Object.freeze({ ...api, ...sessionApi });
+  });
+
+  const completing = Object.values<Strategy>(selected).some(
+    (strategy) => strategy.completion === true,
+  );
+
+  const configured =
+    options.sessions === undefined
+      ? create
+      : !completing
+        ? withConstructionLayer(create, configuredLayer(sessions, options.sessions))
+        : withConstructionLayer(
+            create,
+            sessions
+              .completionLayer()
+              .pipe(
+                Layer.provideMerge(configuredLayer(sessions, options.sessions)),
+                Layer.provide([cryptoLayer, hooksLayer]),
+              ),
+          );
+
+  type SelectedStrategies = (typeof selected)[keyof typeof selected];
+  type Completes = true extends CompletionOf<SelectedStrategies> ? true : false;
+  type ConfigurationRequirements = Sessions extends SessionConfiguration
+    ?
+        | SessionRequirements<Sessions, SessionId, Claims>
+        | (Completes extends true ? AuthenticationAuthority : never)
+    : never;
+  type Provided = Sessions extends SessionConfiguration
+    ?
+        | ModuleService<SessionId, "strategy", Claims["Type"]>
+        | (Completes extends true ? ModuleService<SessionId, "completion", Claims["Type"]> : never)
+    : never;
+
+  // Runtime selection mirrors the session mode and presence of selected methods.
+  // Unconfigured definitions retain their explicit strategy/completion requirements.
+  const make = configured as Effect.Effect<
+    Effect.Success<typeof create>,
+    | Effect.Error<typeof create>
+    | (Sessions extends SessionConfiguration ? SessionConfigurationError : never),
+    Exclude<Effect.Services<typeof create>, Provided> | ConfigurationRequirements
+  >;
+
   return Object.freeze({
     claims: options.claims,
     namespace,
     sessions,
     strategies: Object.freeze(modules),
-    make: build(selected, defaultStrategy),
+    make,
   });
 };
 
-/** Construct typed auth methods whose resources live in the caller's Scope. */
+/** Identifier for a constant auth service. The stable name also isolates its credentials. */
+export interface AuthService<Id extends string, Claims> {
+  readonly id: Id;
+  readonly claims: Types.Invariant<Claims>;
+}
+
+const service =
+  <Self>() =>
+  <const Id extends string, A, E, R, Definition>(
+    id: Id,
+    definition: Definition,
+    create: Effect.Effect<A, E, R>,
+  ) => {
+    const Auth = Context.Service<Self, A>()(id);
+    const layer = Layer.effect(Auth, create);
+
+    return Object.assign(Auth, definition, { layer });
+  };
+
+/** Define one yieldable auth service, its schemas, extension ports and runtime Layer. */
+export const define = <
+  const Id extends string,
+  Claims extends ClaimsCodec,
+  const S extends StrategySelection = {},
+  const Default extends keyof S | undefined = undefined,
+  const Namespace extends string = Id,
+  const SessionId extends string = `${Namespace}/sessions`,
+  const Sessions extends SessionConfiguration | undefined = undefined,
+>(
+  id: Id,
+  options: Options<Claims, S, Default, Namespace, SessionId, Id, Sessions>,
+) => {
+  if (!Schema.is(Schema.NonEmptyString)(id)) throw AuthConfigurationError.make({ reason: "id" });
+
+  const definition = bind<Claims, S, Default, Namespace, SessionId, Sessions>({
+    ...options,
+    namespace: options.namespace ?? id,
+  } as Options<Claims, S, Default, Namespace, SessionId, "effect-auth", Sessions>);
+
+  return service<AuthService<Id, Claims["Type"]>>()(id, definition, definition.make);
+};
+
+/** Construct auth directly within the caller's Scope, without a named service. */
 export const make = <
   Claims extends ClaimsCodec,
-  const S extends StrategySelection,
+  const S extends StrategySelection = {},
   const Default extends keyof S | undefined = undefined,
   const Id extends string = "effect-auth",
   const SessionId extends string = `${Id}/sessions`,
+  const Sessions extends SessionConfiguration | undefined = undefined,
 >(
-  options: Options<Claims, S, Default, Id, SessionId>,
+  options: Options<Claims, S, Default, Id, SessionId, "effect-auth", Sessions>,
 ) => {
-  const captured = { ...options, strategies: { ...options.strategies } };
-  // Binding only constructs contracts and Layers. Their resources are acquired by the Effect.
-  const definition = Result.try(() => define<Claims, S, Default, Id, SessionId>(captured));
+  const definition = Result.try(() => bind<Claims, S, Default, Id, SessionId, Sessions>(options));
 
   return Effect.gen(function* () {
     if (Result.isFailure(definition)) {
@@ -237,36 +366,27 @@ export const make = <
   });
 };
 
-/** Optionally expose the same constructor through a named Context service and static Layer. */
+/** Class form of the same auth definition, for applications using named service classes. */
 export const Service =
   <Self>() =>
   <
     const Id extends string,
     Claims extends ClaimsCodec,
-    const S extends StrategySelection,
+    const S extends StrategySelection = {},
     const Default extends keyof S | undefined = undefined,
     const Namespace extends string = Id,
     const SessionId extends string = `${Namespace}/sessions`,
+    const Sessions extends SessionConfiguration | undefined = undefined,
   >(
     id: Id,
-    options: Options<Claims, S, Default, Namespace, SessionId, Id>,
+    options: Options<Claims, S, Default, Namespace, SessionId, Id, Sessions>,
   ) => {
     if (!Schema.is(Schema.NonEmptyString)(id)) throw AuthConfigurationError.make({ reason: "id" });
 
-    const definition = define<Claims, S, Default, Namespace, SessionId>({
+    const definition = bind<Claims, S, Default, Namespace, SessionId, Sessions>({
       ...options,
-      namespace: (options.namespace ?? id) as Namespace,
-    } as Options<Claims, S, Default, Namespace, SessionId>);
+      namespace: options.namespace ?? id,
+    } as Options<Claims, S, Default, Namespace, SessionId, "effect-auth", Sessions>);
 
-    const create = definition.make;
-    const Auth = Context.Service<Self, Effect.Success<typeof create>>()(id);
-
-    const layer = Layer.fromBuildMemo((memoMap, scope) =>
-      Effect.map(create, (api) => Context.make(Auth, api)).pipe(
-        Effect.provideService(Layer.CurrentMemoMap, memoMap),
-        Scope.provide(scope),
-      ),
-    );
-
-    return Object.assign(Auth, definition, { layer } as const);
+    return service<Self>()(id, definition, definition.make);
   };

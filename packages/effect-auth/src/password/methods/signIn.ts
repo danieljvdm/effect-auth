@@ -131,6 +131,7 @@ export const makePasswordSignIn = <
         }),
       },
       layer.pipe(Layer.provideMerge(cryptoLayer)),
+      { completion: true },
     ),
   });
 };

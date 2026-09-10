@@ -40,8 +40,7 @@ export const Claims = Schema.Struct({
   segment: Schema.Literals(["retail", "wholesale"]),
 });
 
-export const shopAuth = Auth.define({
-  namespace: "shop",
+export const shopAuth = Auth.define("shop", {
   sessionNamespace: "shop/sessions",
   claims: Claims,
   strategies: {

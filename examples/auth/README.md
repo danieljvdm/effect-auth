@@ -2,7 +2,8 @@
 
 Consumer examples compose public `effect-auth` exports with application-owned
 identity, persistence, and delivery. `getting-started.ts` shows application
-composition; the runnable password, email, phone, session, and proof programs
+composition; `session-contract.ts` and `session-http.ts` show the minimal session
+service, cookies, selected routes, and protected HttpApi group. The runnable password, email, phone, session, and proof programs
 use local example data.
 
 Run a declared example through `vp run -F @effect-auth/example-auth <task>`.

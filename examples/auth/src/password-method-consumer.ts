@@ -40,9 +40,8 @@ import {
 const Claims = Schema.Struct({ team: Schema.String });
 const budget = { limit: 30, windowMillis: 60_000 };
 
-export const passwordAuth = Auth.define({
+export const passwordAuth = Auth.define("example/password-auth", {
   claims: Claims,
-  namespace: "example/password-auth",
   sessionNamespace: "example/password-sessions",
   defaultStrategy: "password",
   strategies: {

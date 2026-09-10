@@ -107,6 +107,7 @@ const program = Effect.gen(function* () {
       const handlers = Layer.merge(capabilities, sessionVerify);
 
       const call = {
+        credentials: {},
         credentialCommandSink: (batch: readonly AuthCredentialCommand[]) =>
           Effect.sync(() => {
             commands.push(...batch);

@@ -92,3 +92,14 @@ export {
 } from "./sessions/assurance";
 
 export { make } from "./sessions/definition";
+
+export {
+  stateful,
+  stateless,
+  stateAssisted,
+  type SessionOptions,
+  type SessionConfiguration,
+  type StatefulConfiguration,
+  type StatelessConfiguration,
+  type StateAssistedConfiguration,
+} from "./sessions/configuration";

@@ -711,6 +711,7 @@ export const makeTotpModule = <
         recoverLostFactor: RecoverLostFactor.invoke,
       },
       handlersLayer.pipe(Layer.provide(layer)),
+      { completion: true },
     ),
   });
 };

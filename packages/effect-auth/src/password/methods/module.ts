@@ -930,6 +930,7 @@ const makePasswordWithManagement = <
         Layer.provide([hashingLayer, newPasswordLayer, hooksLayer]),
         Layer.provideMerge(cryptoLayer),
       ),
+      { completion: true },
     ),
     prepared: (configuration: PasswordPreparedConfiguration) =>
       makePasswordPrepared(
