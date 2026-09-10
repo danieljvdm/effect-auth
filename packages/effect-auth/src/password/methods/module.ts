@@ -34,6 +34,7 @@ import { hashingLayer, newPasswordLayer } from "../defaults";
 import { NewPasswordRejected, PasswordCheckUnavailable } from "../errors";
 import { NewPasswordCheck } from "../NewPasswordCheck";
 import { PasswordHashing } from "../PasswordHashing";
+import { PasswordSignInInput } from "./contracts";
 import {
   PasswordActionRequired,
   PasswordMethodConfigurationError,
@@ -189,7 +190,7 @@ const makePasswordWithManagement = <
     registration: RegistrationCodec,
   });
 
-  const SignInInput = Schema.Struct({ flowId: FlowId, email: BoundedEmail, password: Password });
+  const SignInInput = Schema.Struct({ flowId: FlowId, ...PasswordSignInInput.fields });
 
   const ActionInput = {
     commandId: PasswordCommandId,

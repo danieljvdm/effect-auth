@@ -5,10 +5,10 @@ import { cryptoLayer } from "../../auth/defaults";
 import { HookDenied } from "../../hooks/models";
 import type { AuthInvocation } from "../../operations/context";
 import { makeOperation, operationGroup } from "../../operations/operation";
-import { Email } from "../../Schema";
 import { AuthenticationFlowId } from "../../sessions/models";
 import type { makeSessionModule } from "../../sessions/module";
 import { hashingLayer } from "../defaults";
+import { PasswordSignInInput } from "./contracts";
 import {
   PasswordMethodConfigurationError,
   PasswordMethodUnsupported,
@@ -66,8 +66,7 @@ export const makePasswordSignIn = <
 
   const Input = Schema.Struct({
     flowId: AuthenticationFlowId.check(Schema.isMaxLength(256)),
-    email: Schema.String.check(Schema.isMaxLength(320)).pipe(Schema.decodeTo(Email)),
-    password: Schema.RedactedFromValue(Schema.String.check(Schema.isMaxLength(65536))),
+    ...PasswordSignInInput.fields,
   });
 
   const SignIn = makeOperation(`${moduleId}/sign-in`, {

@@ -34,6 +34,9 @@ export interface OperationFetchOptions {
 
 export interface OperationCallOptions<Success = unknown> {
   readonly replaceSubject?: boolean | ((success: Success) => boolean);
+  /** Runs inside credential admission after fencing old responses. The callback
+   * must not call this client's transition or start another credential call. */
+  readonly onTransition?: Effect.Effect<void>;
 }
 
 export interface OperationFetchClient {
@@ -52,6 +55,69 @@ export interface OperationFetchClient {
   readonly transition: Effect.Effect<void>;
   readonly generation: Effect.Effect<number>;
 }
+
+/** Complete an authentication operation and publish its subject while its
+ * credential response remains admitted. Undefined preserves a pending flow. */
+export interface OperationAuthenticationCompletion {
+  <R extends AnyRoute>(
+    route: R,
+    input: RouteInput<R>,
+    fromSuccess: (success: RouteSuccess<R>) => string | null | undefined,
+  ): Effect.Effect<
+    RouteSuccess<R>,
+    RouteFailure<R> | OperationHttpError,
+    | R["operation"]["rpc"]["successSchema"]["DecodingServices"]
+    | R["operation"]["rpc"]["errorSchema"]["DecodingServices"]
+  >;
+}
+
+/** The caller owns the lifecycle gate and publisher. Publishers must not call
+ * the transport: they run under credential admission, before reveal acceptance. */
+export const makeAuthenticationCompletion = (
+  client: OperationFetchClient,
+  gate: Semaphore.Semaphore,
+  publishSubject: (subject: string | null) => Effect.Effect<void>,
+): OperationAuthenticationCompletion =>
+  Effect.fn("OperationHttpClient.completeAuthentication")(function* <R extends AnyRoute>(
+    route: R,
+    input: RouteInput<R>,
+    fromSuccess: (success: RouteSuccess<R>) => string | null | undefined,
+  ) {
+    const started = yield* client.generation;
+
+    return yield* gate.withPermits(1)(
+      Effect.gen(function* () {
+        if ((yield* client.generation) !== started)
+          return yield* OperationHttpError.make({ reason: "stale-response" });
+
+        return yield* Effect.uninterruptible(
+          Effect.gen(function* () {
+            let nextSubject: string | null | undefined;
+
+            return yield* client.call(route, input, {
+              replaceSubject: (value) => {
+                nextSubject = fromSuccess(value);
+
+                return nextSubject !== undefined;
+              },
+              onTransition: Effect.suspend(() =>
+                nextSubject === undefined ? Effect.void : publishSubject(nextSubject),
+              ),
+            });
+          }).pipe(
+            // A failed response can follow a cookie already accepted by the
+            // browser. Remove the old account state without replaying the call.
+            Effect.onError(() =>
+              Effect.gen(function* () {
+                yield* client.transition;
+                yield* publishSubject(null);
+              }),
+            ),
+          ),
+        );
+      }),
+    );
+  });
 
 const responseCodec = Schema.fromJsonString(
   Schema.Union([
@@ -347,7 +413,10 @@ export const make = Effect.fn("OperationHttpClient.make")(function* (
             })
           : projectSubject === true;
 
-      if (replaceSubject) yield* advance;
+      if (replaceSubject) {
+        yield* advance;
+        if (callOptions?.onTransition !== undefined) yield* callOptions.onTransition;
+      }
       if (privateCommands.length > 0) yield* options.privateOutput!.accept(privateCommands);
 
       return value as RouteSuccess<R>;

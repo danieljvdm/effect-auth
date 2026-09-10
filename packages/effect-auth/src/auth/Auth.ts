@@ -1,5 +1,6 @@
 import { Context, Effect, Exit, Layer, Option, Result, Schema, Scope, type Types } from "effect";
 
+import { make as makeContract, type AnyAuthContract } from "../operations/actions";
 import type { AuthenticationAuthority } from "../sessions/AuthenticationAuthority";
 import {
   configuredLayer,
@@ -8,6 +9,7 @@ import {
 } from "../sessions/configuration";
 import type { SessionConfigurationError } from "../sessions/errors";
 import { makeSessionModule, type ModuleService } from "../sessions/module";
+import { makeActionApi } from "./actions";
 import { AuthConfigurationError } from "./AuthConfigurationError";
 import { cryptoLayer, hooksLayer } from "./defaults";
 import type {
@@ -160,7 +162,12 @@ const build = Effect.fn("Auth.make")(function* <
     );
 
     // The dispatch table is assembled from these exact strategy/method pairs.
-    return Object.freeze(api) as AuthApi<S, Default>;
+    return {
+      api: Object.freeze(api) as AuthApi<S, Default>,
+      strategies: Object.freeze(Object.fromEntries(built)) as {
+        readonly [Name in keyof S]: Api<S[Name]>;
+      },
+    };
   }).pipe(
     Effect.provideService(Layer.CurrentMemoMap, memoMap),
     Scope.provide(scope),
@@ -211,8 +218,10 @@ const bind = <
   const Id extends string = "effect-auth",
   const SessionId extends string = `${Id}/sessions`,
   const Sessions extends SessionConfiguration | undefined = undefined,
+  Contract extends AnyAuthContract | undefined = undefined,
 >(
   options: Options<Claims, S, Default, Id, SessionId, "effect-auth", Sessions>,
+  shared?: Contract,
 ) => {
   const strategies = { ...options.strategies };
   const defaultStrategy = options.defaultStrategy;
@@ -243,11 +252,28 @@ const bind = <
     Object.entries(modules).map(([key, module]) => [key, module.strategy]),
   ) as BoundSelection<typeof modules>;
 
+  type ContractDefinition = Contract extends AnyAuthContract
+    ? Contract
+    : ReturnType<typeof makeContract<Id, Claims>>;
+
+  const contract = (shared ??
+    makeContract(namespace, { claims: options.claims })) as ContractDefinition;
+
   const create = Effect.gen(function* () {
-    const api = yield* build(selected, defaultStrategy);
+    const built = yield* build(selected, defaultStrategy);
     const sessionApi = yield* makeSessionApi(sessions);
 
-    return Object.freeze({ ...api, ...sessionApi });
+    const raw = { ...built.api, ...sessionApi };
+
+    const actions = yield* makeActionApi<
+      typeof sessionApi,
+      typeof built.strategies,
+      Default,
+      ContractDefinition["actions"]
+    >(sessionApi, built.strategies, defaultStrategy, contract.actions);
+
+    return Object.freeze({ ...raw, ...actions }) as Omit<typeof raw, keyof typeof actions> &
+      typeof actions;
   });
 
   const completing = Object.values<Strategy>(selected).some(
@@ -293,6 +319,7 @@ const bind = <
 
   return Object.freeze({
     claims: options.claims,
+    contract,
     namespace,
     sessions,
     strategies: Object.freeze(modules),
@@ -320,7 +347,68 @@ const service =
   };
 
 /** Define one yieldable auth service, its schemas, extension ports and runtime Layer. */
-export const define = <
+const defineService = <
+  const Id extends string,
+  Claims extends ClaimsCodec,
+  const S extends StrategySelection = {},
+  const Default extends keyof S | undefined = undefined,
+  const Namespace extends string = Id,
+  const SessionId extends string = `${Namespace}/sessions`,
+  const Sessions extends SessionConfiguration | undefined = undefined,
+  Contract extends AnyAuthContract | undefined = undefined,
+>(
+  id: Id,
+  options: Options<Claims, S, Default, Namespace, SessionId, Id, Sessions>,
+  contract?: Contract,
+) => {
+  if (!Schema.is(Schema.NonEmptyString)(id)) throw AuthConfigurationError.make({ reason: "id" });
+
+  const definition = bind<Claims, S, Default, Namespace, SessionId, Sessions, Contract>(
+    {
+      ...options,
+      namespace: options.namespace ?? id,
+    } as Options<Claims, S, Default, Namespace, SessionId, "effect-auth", Sessions>,
+    contract,
+  );
+
+  return service<AuthService<Id, Claims["Type"]>>()(id, definition, definition.make);
+};
+
+/** Bind a shared contract to local implementations, or define a local service
+ * directly. Both forms resolve AuthRequest at execution time. */
+export function define<
+  Contract extends AnyAuthContract,
+  const S extends StrategySelection = {},
+  const Default extends keyof S | undefined = undefined,
+  const Sessions extends SessionConfiguration | undefined = undefined,
+>(
+  contract: Contract,
+  options: Omit<
+    Options<
+      Contract["claims"],
+      S,
+      Default,
+      Contract["namespace"],
+      `${Contract["namespace"]}/sessions`,
+      Contract["namespace"],
+      Sessions
+    >,
+    "claims" | "namespace" | "sessionNamespace"
+  >,
+): ReturnType<
+  typeof defineService<
+    Contract["namespace"],
+    Contract["claims"],
+    S,
+    Default,
+    Contract["namespace"],
+    `${Contract["namespace"]}/sessions`,
+    Sessions,
+    Contract
+  >
+>;
+
+export function define<
   const Id extends string,
   Claims extends ClaimsCodec,
   const S extends StrategySelection = {},
@@ -331,16 +419,41 @@ export const define = <
 >(
   id: Id,
   options: Options<Claims, S, Default, Namespace, SessionId, Id, Sessions>,
-) => {
-  if (!Schema.is(Schema.NonEmptyString)(id)) throw AuthConfigurationError.make({ reason: "id" });
+): ReturnType<typeof defineService<Id, Claims, S, Default, Namespace, SessionId, Sessions>>;
 
-  const definition = bind<Claims, S, Default, Namespace, SessionId, Sessions>({
+export function define(
+  definition: string | AnyAuthContract,
+  options: {
+    readonly claims?: ClaimsCodec;
+    readonly strategies?: StrategySelection;
+    readonly sessions?: SessionConfiguration;
+    readonly defaultStrategy?: string;
+    readonly namespace?: string;
+    readonly sessionNamespace?: string;
+  },
+): unknown {
+  if (typeof definition !== "string") {
+    return defineService(
+      definition.namespace,
+      {
+        ...options,
+        namespace: definition.namespace,
+        sessionNamespace: `${definition.namespace}/sessions`,
+        claims: definition.claims,
+      },
+      definition,
+    );
+  }
+  if (options.claims === undefined) throw AuthConfigurationError.make({ reason: "method" });
+  const namespace = options.namespace ?? definition;
+
+  return defineService(definition, {
     ...options,
-    namespace: options.namespace ?? id,
-  } as Options<Claims, S, Default, Namespace, SessionId, "effect-auth", Sessions>);
-
-  return service<AuthService<Id, Claims["Type"]>>()(id, definition, definition.make);
-};
+    namespace,
+    sessionNamespace: options.sessionNamespace ?? `${namespace}/sessions`,
+    claims: options.claims,
+  });
+}
 
 /** Construct auth directly within the caller's Scope, without a named service. */
 export const make = <

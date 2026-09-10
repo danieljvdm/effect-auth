@@ -1,7 +1,11 @@
 import { Context, Effect, Scope, Semaphore, SubscriptionRef } from "effect";
 import { Atom, AtomRegistry } from "effect/unstable/reactivity";
 
-import type { OperationFetchClient } from "../http-operation/client";
+import {
+  makeAuthenticationCompletion,
+  type OperationAuthenticationCompletion,
+  type OperationFetchClient,
+} from "../http-operation/client";
 
 export interface AuthSubjectLifetime {
   readonly subject: string | null;
@@ -17,6 +21,7 @@ export class AuthAtomLifetime extends Context.Service<
     readonly get: Effect.Effect<AuthSubjectLifetime>;
     readonly controlRegistry: AtomRegistry.AtomRegistry;
     readonly replaceSubject: (subject: string | null) => Effect.Effect<void>;
+    readonly completeAuthentication: OperationAuthenticationCompletion;
   }
 >()("effect-auth/AuthAtomLifetime") {}
 
@@ -37,20 +42,24 @@ export const makeLifetime = Effect.fn("AuthAtom.makeLifetime")(function* (
     registry: AtomRegistry.make(),
   });
 
+  const publishSubject = Effect.fn("AuthAtom.publishSubject")(function* (subject: string | null) {
+    const previous = yield* SubscriptionRef.get(state);
+
+    previous.registry.dispose();
+    yield* SubscriptionRef.set(state, {
+      subject,
+      generation: previous.generation + 1,
+      registry: AtomRegistry.make(),
+    });
+  });
+
   const replaceSubject = Effect.fn("AuthAtom.replaceSubject")(function* (subject: string | null) {
     yield* gate.withPermits(1)(
       Effect.uninterruptible(
         Effect.gen(function* () {
           // The Fetch client waits for browser credential responses before advancing.
           yield* client.transition;
-          const previous = yield* SubscriptionRef.get(state);
-
-          previous.registry.dispose();
-          yield* SubscriptionRef.set(state, {
-            subject,
-            generation: previous.generation + 1,
-            registry: AtomRegistry.make(),
-          });
+          yield* publishSubject(subject);
         }),
       ),
     );
@@ -73,5 +82,6 @@ export const makeLifetime = Effect.fn("AuthAtom.makeLifetime")(function* (
     get: SubscriptionRef.get(state),
     controlRegistry,
     replaceSubject,
+    completeAuthentication: makeAuthenticationCompletion(client, gate, publishSubject),
   };
 });

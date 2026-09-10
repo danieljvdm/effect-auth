@@ -41,13 +41,7 @@ export const makeApplicationAuth = (configuration: {
 
   const http = AuthHttp.make(AppAuth, { origin: configuration.origin });
 
-  const AuthRoutes = http
-    .routes({
-      session: "/auth/session",
-      signOut: "/auth/sign-out",
-      renew: "/auth/renew",
-    })
-    .pipe(http.middleware);
+  const AuthRoutes = http.routes();
 
   // Application code contains its own projection; auth owns request and cookie mechanics.
   const currentMember = Effect.fn("app.currentMember")(function* () {

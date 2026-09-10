@@ -1,5 +1,6 @@
 import {
-  type Context,
+  type Schema,
+  Context,
   type Types,
   type Unify,
   DateTime,
@@ -7,31 +8,33 @@ import {
   Effect,
   Layer,
   Redacted,
-  Schema,
+  Scope,
 } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
 import { AuthRequest } from "../auth/AuthRequest";
 import type { SessionApi, SessionApiError } from "../auth/session";
-import { HookDenied } from "../hooks/models";
 import { OperationHttpConfigurationError, OperationHttpError } from "../http-operation/errors";
-import type { OperationHttpConfiguration } from "../http-operation/models";
-import { invocationLayer } from "../http-operation/OperationHttpInvocation";
+import type { HttpCredentials, OperationHttpConfiguration } from "../http-operation/models";
+import {
+  invocationLayer,
+  OperationHttpInvocation,
+} from "../http-operation/OperationHttpInvocation";
 import {
   configurationLayer,
   cookieConfiguration,
   OperationHttpServerConfig,
 } from "../http-operation/OperationHttpServerConfig";
 import { requestSecurity } from "../http-operation/security";
+import { make as makeOperationServer } from "../http-operation/server";
+import type { ActionSuccess, AuthActions } from "../operations/actions";
 import { guest } from "../operations/context";
 import {
   type AuthCredentialCommand,
   AuthCredentialCommandCollector,
   AuthRevealCommandCollectorService,
 } from "../operations/credentials";
-import { OperationBoundaryError } from "../operations/errors";
-import { SessionError, SessionSignOutUnavailable } from "../sessions/errors";
-import { type SessionMetadata, SessionSignOut } from "../sessions/models";
+import type { SessionMetadata } from "../sessions/models";
 import type { makeSessionHttpContract } from "./session-contract";
 
 /** Browser transport policy. Insecure cookies require an explicit development override. */
@@ -48,16 +51,20 @@ export interface AuthHttpOptions {
   readonly csrf?: { readonly header: string; readonly value: string };
 }
 
-const failureSchema = Schema.Union([SessionError, HookDenied, OperationBoundaryError]);
-const signOutSchema = Schema.Union([SessionSignOut, SessionSignOutUnavailable]);
-
-/** Bind an Auth definition to explicitly selected browser routes and request middleware.
- * Read requests resolve credentials lazily; writes require Origin, JSON and a CSRF header.
+/** Bind an Auth definition to its shared browser actions and request middleware.
+ * Actions resolve credentials lazily and require Origin, JSON and a CSRF header.
  * The application still owns session policy, persistence and profile lookup.
  */
-export const make = <I, S extends SessionMetadata, RE>(
-  auth: Omit<Context.Key<I, SessionApi<S>>, typeof Unify.unifySymbol> & {
+export const make = <
+  I,
+  S extends SessionMetadata,
+  RE,
+  Api extends SessionApi<S, unknown>,
+  Actions extends AuthActions,
+>(
+  auth: Omit<Context.Key<I, Api>, typeof Unify.unifySymbol> & {
     readonly sessions: { readonly Session: Schema.Codec<S, unknown, unknown, RE> };
+    readonly contract: { readonly actions: Actions };
   },
   options: AuthHttpOptions,
 ) => {
@@ -84,7 +91,10 @@ export const make = <I, S extends SessionMetadata, RE>(
     maximumUrlBytes: options.maximumUrlBytes ?? 8192,
   });
 
-  const resolve = (api: SessionApi<S>, credential: Redacted.Redacted<string> | undefined) =>
+  const resolve = (
+    api: Pick<SessionApi<S>, "verifySession">,
+    credential: Redacted.Redacted<string> | undefined,
+  ) =>
     credential === undefined
       ? Effect.succeed(guest)
       : api.verifySession(credential).pipe(
@@ -126,12 +136,25 @@ export const make = <I, S extends SessionMetadata, RE>(
         }
         const api = yield* auth;
 
+        const services = (yield* Effect.context<
+          Exclude<Effect.Services<ReturnType<Api["requireSession"]>>, AuthRequest>
+        >()).pipe(
+          Context.omit(
+            AuthRequest,
+            Scope.Scope,
+            AuthCredentialCommandCollector,
+            AuthRevealCommandCollectorService,
+          ),
+        );
+
         return contract.RequireSession.of({
           session: Effect.fn("AuthHttp.requireSession")(function* (httpEffect) {
             // HttpApiBuilder treats middleware.requires as a construction dependency.
             // This exact Effect runs only inside the request security handler, so
             // expose its AuthRequest requirement through the router request marker.
-            const required = api.requireSession() as unknown as Effect.Effect<
+            const required = api
+              .requireSession()
+              .pipe(Effect.provide(services)) as unknown as Effect.Effect<
               S,
               SessionApiError,
               HttpRouter.Request.From<"Requires", AuthRequest>
@@ -145,7 +168,7 @@ export const make = <I, S extends SessionMetadata, RE>(
       }),
     );
 
-  const wrap = (api: SessionApi<S>, config: OperationHttpConfiguration) =>
+  const wrap = (api: Api, config: OperationHttpConfiguration) =>
     Effect.fn("AuthHttp.request")(function* <E, R>(
       effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
     ) {
@@ -257,67 +280,95 @@ export const make = <I, S extends SessionMetadata, RE>(
       return yield* wrap(api, config)(effect);
     }).pipe(Effect.provide(configuration));
 
-  const sessionJson = HttpServerResponse.schemaJson(Schema.NullOr(auth.sessions.Session));
-  const signOutJson = HttpServerResponse.schemaJson(signOutSchema);
-  const failureJson = HttpServerResponse.schemaJson(failureSchema);
-  const session = Effect.flatMap(auth, (api) => api.getSession()).pipe(Effect.flatMap(sessionJson));
-  // Never resolve/verify the session before sign-out: the raw credential is sufficient.
-  const signOut = Effect.flatMap(auth, (api) => api.signOut()).pipe(Effect.flatMap(signOutJson));
-  const renew = Effect.flatMap(auth, (api) => api.renewSession()).pipe(Effect.flatMap(sessionJson));
+  /** Mount the shared contract. Each route calls the same local method, and
+   * request credentials are installed before that method executes. Paths belong
+   * to the contract so server and client cannot configure them independently. */
+  const routes = () => {
+    type Call = Extract<
+      Api[Extract<keyof Actions, keyof Api>],
+      (...args: never[]) => Effect.Effect<unknown, unknown, unknown>
+    >;
+    type Result = ReturnType<Call>;
+    type Mounted = {
+      readonly [Name in keyof Actions]: Omit<Actions[Name]["route"], "operation"> & {
+        readonly operation: Omit<Actions[Name]["route"]["operation"], "invokeUnknown"> & {
+          readonly invokeUnknown: (
+            invocation: unknown,
+            input: unknown,
+          ) => Effect.Effect<
+            ActionSuccess<Actions[Name]>,
+            Effect.Error<Result>,
+            I | Effect.Services<Result>
+          >;
+        };
+      };
+    };
 
-  const respond = <R>(
-    effect: Effect.Effect<HttpServerResponse.HttpServerResponse, typeof failureSchema.Type, R>,
-  ) =>
-    effect.pipe(
-      Effect.catch((error) =>
-        failureJson(error, {
-          status:
-            error._tag === "AuthenticationRequired" || error._tag === "SessionInvalid"
-              ? 401
-              : error._tag === "SessionUnavailable" || error._tag === "SessionSignOutUnavailable"
-                ? 503
-                : 400,
-        }),
-      ),
+    const table = Object.fromEntries(
+      Object.entries(auth.contract.actions).map(([name, action]) => [
+        name,
+        {
+          ...action.route,
+          operation: {
+            ...action.route.operation,
+            invokeUnknown: (_invocation: unknown, input: unknown) =>
+              Effect.gen(function* () {
+                const api = yield* auth;
+
+                // This table contains the exact methods bound from auth.contract.
+                const invoke = api[name as keyof Api] as (
+                  input: unknown,
+                ) => Effect.Effect<
+                  Effect.Success<Result>,
+                  Effect.Error<Result>,
+                  Effect.Services<Result>
+                >;
+
+                return yield* invoke(input);
+              }),
+          },
+        },
+      ]),
+    ) as Mounted;
+
+    const requestInvocation = Layer.effect(
+      OperationHttpInvocation,
+      Effect.gen(function* () {
+        const api = yield* auth;
+
+        return {
+          resolve: () => Effect.succeed(guest),
+          request: (_request: Request, credentials: HttpCredentials) =>
+            resolve(api, credentials.session),
+        };
+      }),
     );
 
-  /** No endpoint is mounted unless selected; renewal is always an explicit POST.
-   * Merge with application routes, then apply middleware once to the combined Layer. */
-  const routes = (paths: {
-    readonly session?: `/${string}`;
-    readonly signOut?: `/${string}`;
-    readonly renew?: `/${string}`;
-  }) =>
-    Layer.mergeAll(
-      Layer.empty,
-      ...(paths.session === undefined
-        ? []
-        : [
-            HttpRouter.add(
-              "GET",
-              paths.session,
-              respond(session.pipe(Effect.catchTag("HttpBodyError", Effect.die))),
-            ),
-          ]),
-      ...(paths.signOut === undefined
-        ? []
-        : [
+    return Layer.unwrap(
+      Effect.gen(function* () {
+        const server = yield* makeOperationServer({ routes: table }).pipe(
+          Effect.provide([configuration, requestInvocation]),
+        );
+
+        return Layer.mergeAll(
+          Layer.empty,
+          ...Object.values(table).map((route) =>
             HttpRouter.add(
               "POST",
-              paths.signOut,
-              respond(signOut.pipe(Effect.catchTag("HttpBodyError", Effect.die))),
+              route.path,
+              Effect.gen(function* () {
+                const request = yield* HttpServerRequest.toWeb(
+                  yield* HttpServerRequest.HttpServerRequest,
+                ).pipe(Effect.mapError(() => OperationHttpError.make({ reason: "request" })));
+
+                return HttpServerResponse.fromWeb(yield* server.handle(request));
+              }),
             ),
-          ]),
-      ...(paths.renew === undefined
-        ? []
-        : [
-            HttpRouter.add(
-              "POST",
-              paths.renew,
-              respond(renew.pipe(Effect.catchTag("HttpBodyError", Effect.die))),
-            ),
-          ]),
+          ),
+        );
+      }),
     );
+  };
 
   return { routes, middleware, withRequest, operationLayer, securityLayer };
 };

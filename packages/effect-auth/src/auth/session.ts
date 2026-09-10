@@ -19,22 +19,22 @@ import { AuthRequest } from "./AuthRequest";
 export type SessionApiError = SessionError | HookDenied | OperationBoundaryError;
 
 /** Session actions share implementations across HTTP, native and local callers. */
-export interface SessionApi<Session> {
+export interface SessionApi<Session, R = never> {
   /** Explicit credential verification; does not read a request or renew credentials. */
   readonly verifySession: (
     credential: Redacted.Redacted<string>,
   ) => Effect.Effect<Session, SessionApiError>;
   /** Missing or invalid credentials are anonymous; availability failures remain failures. */
-  readonly getSession: () => Effect.Effect<Session | null, SessionApiError, AuthRequest>;
-  readonly requireSession: () => Effect.Effect<Session, SessionApiError, AuthRequest>;
+  readonly getSession: () => Effect.Effect<Session | null, SessionApiError, AuthRequest | R>;
+  readonly requireSession: () => Effect.Effect<Session, SessionApiError, AuthRequest | R>;
   /** Does not preverify. Local clearing and server invalidation have distinct outcomes. */
   readonly signOut: () => Effect.Effect<
     SessionSignOut | SessionSignOutUnavailable,
     SessionApiError,
-    AuthRequest
+    AuthRequest | R
   >;
   /** Explicit renewal; ordinary session reads never rotate credentials. */
-  readonly renewSession: () => Effect.Effect<Session, SessionApiError, AuthRequest>;
+  readonly renewSession: () => Effect.Effect<Session, SessionApiError, AuthRequest | R>;
 }
 
 export const makeSessionApi = <

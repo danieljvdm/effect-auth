@@ -29,7 +29,6 @@ import {
 } from "../operations/context";
 import { type AuthOperationResult } from "../operations/credentials";
 import { TokenDigest } from "../Schema";
-import { makeSessionContract } from "../SessionContract";
 import {
   assessAuthentication,
   combineAuthenticationEvidence,
@@ -37,6 +36,7 @@ import {
   snapshotSessionAuthenticationProvenance,
 } from "./assurance";
 import { AuthenticationAuthority } from "./AuthenticationAuthority";
+import { makeSessionContract } from "./contract";
 import { makeSessionSecrets, makeSessionSigningCodec, type SessionSigningKeyring } from "./crypto";
 import type { SessionError } from "./errors";
 import {

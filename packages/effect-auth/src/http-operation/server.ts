@@ -405,6 +405,9 @@ export const make = <
           Context.add(Scope.Scope, requestScope),
           Context.add(AuthRequest, {
             invocation: trusted,
+            ...(invocation.request === undefined
+              ? {}
+              : { resolveInvocation: invocation.request(request, security.credentials) }),
             credentials: security.credentials,
             credentialCommandSink: sink,
             revealCommandCollector: collector,

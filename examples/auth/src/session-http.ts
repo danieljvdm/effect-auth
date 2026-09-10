@@ -26,9 +26,10 @@ const ProfileHandlers = HttpApiBuilder.group(ProfileApi, "profile", (handlers) =
 // Supply the bound StatefulSessionPersistence and SessionRepository through a storage Layer.
 // Only the session backend is required; this example installs no authentication methods.
 export const Routes = Layer.mergeAll(
-  http.routes({ session: "/auth/session", signOut: "/auth/sign-out", renew: "/auth/renew" }),
+  http.routes(),
   HttpApiBuilder.layer(ProfileApi).pipe(
     Layer.provide(ProfileHandlers),
     Layer.provide(http.securityLayer(SessionHttp)),
+    http.middleware,
   ),
-).pipe(http.middleware, Layer.provide(AppAuth.layer));
+).pipe(Layer.provide(AppAuth.layer));

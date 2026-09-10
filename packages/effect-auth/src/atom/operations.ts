@@ -97,30 +97,7 @@ const completeAuthentication = Effect.fn("AuthAtom.completeAuthentication")(func
 ) {
   const lifetime = yield* AuthAtomLifetime;
 
-  return yield* Effect.uninterruptible(
-    Effect.gen(function* () {
-      let nextSubject: string | null | undefined;
-
-      const value = yield* lifetime.client.call(route, input, {
-        replaceSubject: (success) => {
-          nextSubject = subject(success);
-
-          return nextSubject !== undefined;
-        },
-      });
-
-      // Undefined keeps a pending multi-factor workflow in this registry; an
-      // authenticated subject or explicit sign-out publishes a fresh lifetime.
-      if (nextSubject !== undefined) yield* lifetime.replaceSubject(nextSubject);
-
-      return value;
-    }).pipe(
-      // A failed transport or projector can follow a credential response already
-      // applied by the browser. Remove the old subject state on every failed
-      // authentication transition; a later explicit verification can restore it.
-      Effect.onError(() => lifetime.replaceSubject(null)),
-    ),
-  );
+  return yield* lifetime.completeAuthentication(route, input, subject);
 });
 
 /** Compose protocol operations and device effects in Atom, leaving rendering
