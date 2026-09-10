@@ -9,6 +9,7 @@ export * as Password from "./Password.ts";
 export * as PhoneOtp from "./PhoneOtp.ts";
 export * as Proofs from "./Proofs.ts";
 export * as Schema from "./Schema.ts";
+export * as SessionContract from "./SessionContract.ts";
 export * as Sessions from "./Sessions.ts";
 export * as Totp from "./Totp.ts";
 export * as OperationHttp from "./OperationHttp.ts";

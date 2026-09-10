@@ -2,10 +2,10 @@ import { Effect, Layer, Option, Schema } from "effect";
 
 import {
   type AssuranceRequirement,
-  makeOperation,
   requireAssurance,
   requireAuthenticated,
-} from "../Operations";
+} from "../operations/context";
+import { makeOperation } from "../operations/operation";
 import { SubjectId } from "../Schema";
 import { IdentityMutation } from "./IdentityMutation";
 import { IdentityRepository } from "./IdentityRepository";
