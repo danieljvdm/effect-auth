@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Let main finish publishing a baseline while newer PR runs supersede old ones.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  VP_GIT_HOOKS: "0"
+
+jobs:
+  checks:
+    name: Static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install dependencies (frozen, scripts suppressed)
+        run: bun x --bun vite-plus@0.3.0 install --frozen-lockfile --ignore-scripts
+
+      - name: Patch Effect TypeScript-Go
+        run: ./node_modules/.bin/vp run patch:tsgo
+
+      # Restored after the install because a reinstall can recreate
+      # node_modules, which would drop a cache restored earlier.
+      - name: Restore Vite Task cache
+        id: task-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules/.vite/task-cache
+          key: vite-task-checks-${{ runner.os }}-${{ hashFiles('bun.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            vite-task-checks-${{ runner.os }}-${{ hashFiles('bun.lock') }}-
+            vite-task-checks-${{ runner.os }}-
+
+      - name: Format, lint, and type checks
+        run: ./node_modules/.bin/vp run check
+
+      - name: Save Vite Task cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: node_modules/.vite/task-cache
+          key: ${{ steps.task-cache.outputs.cache-primary-key }}
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install dependencies (frozen, scripts suppressed)
+        run: bun x --bun vite-plus@0.3.0 install --frozen-lockfile --ignore-scripts
+
+      - name: Patch Effect TypeScript-Go
+        run: ./node_modules/.bin/vp run patch:tsgo
+
+      - name: Restore Vite Task cache
+        id: task-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules/.vite/task-cache
+          key: vite-task-test-v2-workspace-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            vite-task-test-v2-workspace-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}-
+            vite-task-test-v2-workspace-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Run workspace test suites
+        id: tests
+        run: >-
+          ./node_modules/.bin/vp run -v test
+
+      # Vite Task never caches failed tasks. Retain successful siblings so
+      # fixing one failure does not force the entire suite to run cold again.
+      - name: Save Vite Task cache
+        if: ${{ !cancelled() && (steps.tests.outcome == 'success' || steps.tests.outcome == 'failure') }}
+        uses: actions/cache/save@v4
+        with:
+          path: node_modules/.vite/task-cache
+          key: ${{ steps.task-cache.outputs.cache-primary-key }}
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install dependencies (frozen, scripts suppressed)
+        run: bun x --bun vite-plus@0.3.0 install --frozen-lockfile --ignore-scripts
+
+      - name: Patch Effect TypeScript-Go
+        run: ./node_modules/.bin/vp run patch:tsgo
+
+      - name: Restore Vite Task cache
+        id: task-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules/.vite/task-cache
+          key: vite-task-build-${{ runner.os }}-${{ hashFiles('bun.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            vite-task-build-${{ runner.os }}-${{ hashFiles('bun.lock') }}-
+            vite-task-build-${{ runner.os }}-
+
+      - name: Build packages, examples, and docs
+        run: ./node_modules/.bin/vp run -v build
+
+      - name: Save Vite Task cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: node_modules/.vite/task-cache
+          key: ${{ steps.task-cache.outputs.cache-primary-key }}
+
+  # Fan-in for branch protection: the required status check is named `ready`.
+  # It runs even after a PR gate fails, and never posts a main-push ready check.
+  ready:
+    name: ready
+    needs: [checks, test, build]
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify all ordinary gates passed
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          test "$CHECKS_RESULT" = "success"
+          test "$TEST_RESULT" = "success"
+          test "$BUILD_RESULT" = "success"

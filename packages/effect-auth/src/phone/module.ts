@@ -1,0 +1,432 @@
+import {
+  Context,
+  Crypto,
+  DateTime,
+  Effect,
+  Encoding,
+  Layer,
+  Option,
+  Schema,
+  type Types,
+} from "effect";
+
+import { makeAuthStrategy } from "../auth/AuthStrategy";
+import { cryptoLayer, defaultLayer, hooksLayer } from "../auth/defaults";
+import { hasCommitScope } from "../hooks/commit";
+import { HookDenied } from "../hooks/models";
+import { LoginIdentifier } from "../identity/models";
+import type { AuthInvocation } from "../operations/context";
+import { makeOperation, operationGroup } from "../operations/operation";
+import type { RequestBindingCredential } from "../operations/requestBinding";
+import { makeRequestBinding, RequestBindingFlowId } from "../operations/requestBinding";
+import type { ProofKeyring } from "../proofs/crypto";
+import { readProofCommit } from "../proofs/dispatch";
+import { ProofBinding, ProofPurpose, ProofRequestId, ProofRequestReceipt } from "../proofs/models";
+import { makeProofModule, snapshotProofConfiguration } from "../proofs/module";
+import type { ProofPolicy } from "../proofs/policy";
+import { TokenDigest } from "../Schema";
+import { AuthenticationAuthority } from "../sessions/AuthenticationAuthority";
+import {
+  AuthenticationFlowId,
+  AuthenticationRevision,
+  type AuthenticationEvidence,
+} from "../sessions/models";
+import type { makeSessionModule } from "../sessions/module";
+import { phoneFailure } from "./failure";
+import {
+  makePhoneLifecycle,
+  phoneAdmission,
+  phoneDigest,
+  phoneAttemptAdmission,
+} from "./lifecycle";
+import type { PhoneLifecyclePolicy } from "./lifecycleModels";
+import {
+  PhoneCredentialSnapshot,
+  PhoneNumber,
+  PhoneOtpComplete,
+  PhoneOtpRejected,
+  PhoneOtpUnavailable,
+} from "./models";
+import { PhoneDeliveryEligibility } from "./PhoneDeliveryEligibility";
+import { PhoneSignInTargets } from "./PhoneSignInTargets";
+
+const defaultPolicy: ProofPolicy = {
+  lifetimeMillis: 300_000,
+  continuationLifetimeMillis: 30_000,
+  maximumFailedAttempts: 5,
+  maximumDeliveryAttempts: 1,
+  deliveryClaimMillis: 10_000,
+  deliveryRetryMillis: 30_000,
+  requestRetentionMillis: 3_600_000,
+  abuse: {
+    issues: { limit: 5, windowMillis: 3_600_000 },
+    attempts: { limit: 10, windowMillis: 300_000 },
+    subjectIssues: { limit: 5, windowMillis: 3_600_000 },
+    subjectAttempts: { limit: 10, windowMillis: 300_000 },
+    actionIssues: { limit: 1000, windowMillis: 3_600_000 },
+    actionAttempts: { limit: 1000, windowMillis: 300_000 },
+    resendCooldownMillis: 30_000,
+  },
+};
+
+/** Capture the phone method's proof defaults when its descriptor is constructed. */
+export const snapshotPhoneConfiguration = <
+  Configuration extends {
+    readonly template: string;
+    readonly keys: ProofKeyring;
+    readonly policy?: ProofPolicy;
+    readonly digits?: 6 | 7 | 8 | 9 | 10;
+    readonly lifecycle?: PhoneLifecyclePolicy;
+  },
+>(
+  input: Configuration,
+) =>
+  snapshotProofConfiguration({
+    ...input,
+    policy: input.policy ?? defaultPolicy,
+    secret: { _tag: "NumericCode" as const, digits: input.digits ?? 6 },
+  });
+
+const Start = Schema.Struct({
+  flowId: RequestBindingFlowId,
+  requestId: ProofRequestId,
+  phoneNumber: PhoneNumber,
+  locale: Schema.NonEmptyString.check(Schema.isMaxLength(64)),
+});
+
+const Challenge = Schema.Struct({ ...ProofRequestReceipt.fields, flowId: RequestBindingFlowId });
+const Failure = Schema.Union([PhoneOtpRejected, PhoneOtpUnavailable, HookDenied]);
+const tuple = Schema.fromJsonString(Schema.Array(Schema.String));
+
+const noAmbient = Effect.fn("PhoneOtp.noAmbient")(function* () {
+  if (yield* hasCommitScope) return yield* PhoneOtpUnavailable.make({});
+});
+
+/** Existing-account SMS sign-in. Verification consumes its proof before session
+ * issuance; failure after consumption requires a fresh code. No distributed
+ * atomicity or implicit account linking is claimed.
+ */
+export const makePhoneOtp = <
+  const Id extends string,
+  const SessionId extends string,
+  Claims extends Schema.Codec<unknown, unknown, unknown, unknown>,
+>(
+  moduleId: Id,
+  options: {
+    readonly sessions: ReturnType<typeof makeSessionModule<SessionId, Claims>>;
+    readonly template: string;
+    readonly keys: ProofKeyring;
+    readonly policy?: ProofPolicy;
+    readonly digits?: 6 | 7 | 8 | 9 | 10;
+    readonly lifecycle?: PhoneLifecyclePolicy;
+  },
+) => {
+  const { sessions } = options;
+  const binding = makeRequestBinding(moduleId, "phone-otp-sign-in");
+
+  const proof = makeProofModule(`${moduleId}/sign-in`, {
+    purpose: ProofPurpose.make("phone-otp-sign-in"),
+    binding: ProofBinding,
+    channel: "sms",
+    template: options.template,
+    keys: options.keys,
+    secret: { _tag: "NumericCode", digits: options.digits ?? 6 },
+    policy: options.policy ?? defaultPolicy,
+  });
+
+  const ClaimsForPhone = Context.Service<
+    {
+      readonly moduleId: Id;
+      readonly kind: "phone-claims";
+      readonly claims: Types.Invariant<Claims["Type"]>;
+    },
+    {
+      readonly resolve: (
+        credential: PhoneCredentialSnapshot,
+      ) => Effect.Effect<Claims["Type"], PhoneOtpUnavailable>;
+    }
+  >(`effect-auth/ClaimsForPhone/${moduleId.length}:${moduleId}`);
+
+  const lifecycle = makePhoneLifecycle(
+    moduleId,
+    { ...options, policy: options.policy ?? defaultPolicy, digits: options.digits ?? 6 },
+    ClaimsForPhone,
+  );
+
+  const capture = Effect.fn("PhoneOtp.capture")(function* (request: {
+    readonly flowId: RequestBindingFlowId;
+    readonly phoneNumber: PhoneNumber;
+    readonly requestBinding: typeof RequestBindingCredential.Type;
+  }) {
+    const verified = yield* (yield* binding.RequestBinding)
+      .verify(request.flowId, request.requestBinding)
+      .pipe(Effect.mapError(phoneFailure));
+
+    const candidate = yield* (yield* PhoneSignInTargets).lookup({
+      moduleId,
+      phoneNumber: request.phoneNumber,
+    });
+
+    let target: Option.Option<PhoneCredentialSnapshot> = Option.none();
+
+    if (Option.isSome(candidate)) {
+      const codec = Schema.toCodecJson(PhoneCredentialSnapshot);
+
+      const snapshot = yield* Schema.encodeEffect(codec)(candidate.value).pipe(
+        Effect.flatMap(Schema.decodeEffect(codec)),
+        Effect.mapError(phoneFailure),
+      );
+
+      const current = yield* (yield* AuthenticationAuthority)
+        .capture(snapshot.revision.subjectId, [snapshot.credentialId])
+        .pipe(
+          Effect.map(Option.some),
+          Effect.catchTag("StaleAuthentication", () => Effect.succeed(Option.none())),
+          Effect.mapError(phoneFailure),
+        );
+
+      if (Option.isSome(current)) {
+        const revision = yield* Schema.encodeEffect(Schema.toCodecJson(AuthenticationRevision))(
+          current.value,
+        )
+          .pipe(Effect.flatMap(Schema.decodeEffect(Schema.toCodecJson(AuthenticationRevision))))
+          .pipe(Effect.mapError(phoneFailure));
+
+        if (
+          snapshot.moduleId === moduleId &&
+          snapshot.phoneNumber === request.phoneNumber &&
+          snapshot.verifiedAtMillis <= DateTime.toEpochMillis(yield* DateTime.now) &&
+          revision.subjectId === snapshot.revision.subjectId &&
+          revision.securityRevision === snapshot.revision.securityRevision &&
+          revision.credentials.some(
+            (value) =>
+              value.credentialId === snapshot.credentialId &&
+              value.revision === snapshot.credentialRevision,
+          )
+        )
+          target = Option.some({ ...snapshot, revision });
+      }
+    }
+
+    const encoded = yield* Schema.encodeEffect(tuple)([
+      "effect-auth/phone-otp-sign-in/v1",
+      moduleId,
+      request.flowId,
+      verified.verifier,
+      request.phoneNumber,
+      Option.isSome(target) ? target.value.custodyRevision : "",
+    ]).pipe(Effect.mapError(phoneFailure));
+
+    const digest = yield* (yield* Crypto.Crypto)
+      .digest("SHA-256", new TextEncoder().encode(encoded))
+      .pipe(Effect.mapError(phoneFailure));
+
+    const base = {
+      flowId: request.flowId,
+      contextDigest: TokenDigest.make(Encoding.encodeBase64Url(digest)),
+      identifier: LoginIdentifier.make({ namespace: "phone", value: request.phoneNumber }),
+    };
+
+    const proofBinding: ProofBinding = Option.isSome(target)
+      ? { _tag: "Subject", ...base, revision: target.value.revision }
+      : { _tag: "Identifier", ...base };
+
+    return { target, binding: proofBinding };
+  });
+
+  const admitSignIn = Effect.fn("PhoneOtp.admitRequest")(function* (input: typeof Start.Type) {
+    if (
+      !(yield* phoneAdmission(
+        moduleId,
+        "request",
+        input.requestId,
+        yield* phoneDigest(["sign-in", input.flowId, input.phoneNumber, input.locale]),
+        options.policy?.requestRetentionMillis ?? defaultPolicy.requestRetentionMillis,
+      ))
+    )
+      return yield* PhoneOtpRejected.make({});
+  });
+
+  const SignIn = makeOperation(`${moduleId}/sign-in`, {
+    payload: Start,
+    authorize: admitSignIn,
+    success: Challenge,
+    error: Failure,
+    access: "any",
+    exposure: "public",
+    replay: "non-idempotent",
+    credentials: true,
+  });
+
+  const Complete = makeOperation(`${moduleId}/complete`, {
+    payload: PhoneOtpComplete,
+    authorize: (input) => phoneAttemptAdmission(moduleId, input.flowId, input.reference.proofId),
+    success: sessions.CompletionResult,
+    error: Failure,
+    access: "any",
+    exposure: "public",
+    replay: "single-use",
+    credentials: true,
+  });
+
+  const handlersLayer = Layer.mergeAll(
+    SignIn.credentialHandlerLayer(
+      Effect.fn("PhoneOtp.signIn")(function* (input, invocation) {
+        yield* noAmbient();
+        if (invocation._tag !== "Guest") return yield* PhoneOtpRejected.make({});
+
+        const issued = yield* (yield* binding.RequestBinding)
+          .issue(input.flowId)
+          .pipe(Effect.mapError(phoneFailure));
+
+        const credential = issued.credentialCommands.find(
+          (command) => command._tag === "Issue" && command.slot === "request-binding",
+        );
+
+        if (credential?._tag !== "Issue") return yield* PhoneOtpUnavailable.make({});
+        const current = yield* capture({ ...input, requestBinding: credential.credential });
+        const eligible = yield* (yield* PhoneDeliveryEligibility).allowed(input.phoneNumber);
+
+        const dispatch = yield* (yield* proof.Proofs)
+          .prepareIssue({
+            requestId: input.requestId,
+            binding: current.binding,
+            locale: input.locale,
+            eligible: Option.isSome(current.target) && eligible,
+          })
+          .pipe(Effect.flatMap(readProofCommit), Effect.mapError(phoneFailure));
+
+        yield* dispatch.dispatch.pipe(Effect.mapError(phoneFailure));
+
+        return {
+          value: { ...dispatch.receipt, flowId: input.flowId },
+          credentialCommands: issued.credentialCommands,
+        };
+      }),
+    ),
+    Complete.credentialHandlerLayer(
+      Effect.fn("PhoneOtp.completeSignIn")(function* (input, invocation) {
+        yield* noAmbient();
+        if (invocation._tag !== "Guest") return yield* PhoneOtpRejected.make({});
+        const current = yield* capture(input);
+        const verifiedAt = yield* DateTime.now;
+        const proofs = yield* proof.Proofs;
+
+        const attempted = yield* proofs
+          .prepareAttempt({
+            binding: current.binding,
+            reference: input.reference,
+            credential: input.code,
+          })
+          .pipe(Effect.flatMap(readProofCommit), Effect.mapError(phoneFailure));
+
+        if (attempted.value._tag !== "Accepted" || Option.isNone(current.target))
+          return yield* PhoneOtpRejected.make({});
+
+        const continuation = attempted.credentialCommands.find(
+          (command) => command._tag === "Issue" && command.slot === "proof-continuation",
+        );
+
+        if (continuation?._tag !== "Issue") return yield* PhoneOtpUnavailable.make({});
+
+        const consumed = yield* proofs
+          .prepareComplete({
+            binding: current.binding,
+            continuationId: attempted.value.continuation.continuationId,
+            credential: continuation.credential,
+          })
+          .pipe(Effect.flatMap(readProofCommit), Effect.mapError(phoneFailure));
+
+        if (consumed !== "completed") return yield* PhoneOtpRejected.make({});
+
+        const evidence: AuthenticationEvidence = {
+          flowId: AuthenticationFlowId.make(input.flowId),
+          bindingDigest: current.binding.contextDigest,
+          revision: current.target.value.revision,
+          proofs: [
+            {
+              method: "phone-otp",
+              credentialId: current.target.value.credentialId,
+              factors: ["possession"],
+              userVerified: false,
+              phishingResistant: false,
+              verifiedAt,
+            },
+          ],
+        };
+
+        const claimCredential = yield* Schema.encodeEffect(
+          Schema.toCodecJson(PhoneCredentialSnapshot),
+        )(current.target.value).pipe(
+          Effect.flatMap(Schema.decodeEffect(Schema.toCodecJson(PhoneCredentialSnapshot))),
+          Effect.mapError(phoneFailure),
+        );
+
+        const claims = yield* (yield* ClaimsForPhone).resolve(claimCredential);
+
+        const established = yield* (yield* sessions.AuthenticationCompletion)
+          .prepare({ evidence, claims })
+          .pipe(
+            Effect.flatMap((receipt) => receipt.read),
+            Effect.mapError(phoneFailure),
+          );
+
+        return {
+          value: established.value,
+          credentialCommands: [
+            ...established.credentialCommands,
+            { _tag: "Clear" as const, slot: "request-binding" as const },
+          ],
+        };
+      }),
+    ),
+  );
+
+  const layer = handlersLayer.pipe(
+    Layer.provide(defaultLayer(binding.RequestBinding, binding.layer)),
+    Layer.provide(defaultLayer(proof.Proofs, proof.smsLayer)),
+    Layer.provide([cryptoLayer, hooksLayer]),
+    Layer.merge(lifecycle.layer),
+  );
+
+  return Object.freeze({
+    ClaimsForPhone,
+    lifecycle,
+    binding,
+    proof,
+    layer,
+    handlersLayer: Layer.merge(handlersLayer, lifecycle.handlersLayer),
+    operations: { SignIn, Complete, ...lifecycle.operations },
+    group: operationGroup(
+      SignIn,
+      Complete,
+      lifecycle.operations.Begin,
+      lifecycle.operations.Resend,
+      lifecycle.operations.CompleteLifecycle,
+      lifecycle.operations.Cancel,
+      lifecycle.operations.Cleanup,
+    ),
+    strategy: makeAuthStrategy(
+      {
+        signIn: Effect.fn("PhoneOtp.signInRequest")(function* (
+          invocation: AuthInvocation,
+          input: { readonly phoneNumber: string; readonly locale?: string },
+        ) {
+          const crypto = yield* Crypto.Crypto;
+          const flowId = yield* crypto.randomUUIDv4.pipe(Effect.mapError(phoneFailure));
+          const requestId = yield* crypto.randomUUIDv4.pipe(Effect.mapError(phoneFailure));
+
+          return yield* SignIn.invoke(invocation, {
+            ...input,
+            flowId,
+            requestId,
+            locale: input.locale ?? "en",
+          });
+        }),
+        completeSignIn: Complete.invoke,
+        ...lifecycle.methods,
+      },
+      layer.pipe(Layer.provideMerge(cryptoLayer)),
+    ),
+  });
+};

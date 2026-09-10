@@ -1,0 +1,9 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "effect-auth": "0.0.0",
+    "@effect-auth/example-auth": "0.0.0"
+  },
+  "changesets": []
+}

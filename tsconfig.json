@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/effect-auth"
+    },
+    {
+      "path": "./examples/auth"
+    },
+    {
+      "path": "./docs/.vitepress"
+    }
+  ]
+}

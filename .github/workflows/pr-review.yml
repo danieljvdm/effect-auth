@@ -1,0 +1,76 @@
+name: PR Review
+
+on:
+  # Run trusted code with repository secrets, including for fork PRs. The
+  # pr-review-forks environment requires maintainer approval before any step.
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
+    # Skip automated review for generated release metadata; ordinary CI still runs.
+    paths-ignore:
+      - ".changeset/**"
+      - "bun.lock"
+      - "packages/*/CHANGELOG.md"
+      - "packages/*/package.json"
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    if: >-
+      vars.PR_REVIEW_ENABLED == 'true' && (
+      (github.event_name == 'pull_request_target' && !github.event.pull_request.draft) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+        (github.event.comment.author_association == 'OWNER' ||
+         github.event.comment.author_association == 'MEMBER' ||
+         github.event.comment.author_association == 'COLLABORATOR') &&
+        startsWith(github.event.comment.body, '@effect-agent review')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      # Configure required reviewers in repository settings before enabling
+      # this workflow. Same-repository PRs and authorized comments need no gate.
+      name: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository && 'pr-review-forks' || 'pr-review' }}
+      deployment: false
+    steps:
+      - name: Check out the trusted review channel
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Never check out or execute PR-head code in this privileged job.
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Mint the Effect Agent GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.EFFECT_AGENT_APP_ID }}
+          private-key: ${{ secrets.EFFECT_AGENT_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Review the pull request
+        uses: danieljvdm/effect-agent/action@action-v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          github-token: ${{ steps.app-token.outputs.token }}
+          pull-request: ${{ github.event.pull_request.number || github.event.issue.number }}
+          review-author: effect-agent[bot]
+          mode: ${{ github.event_name == 'pull_request_target' && 'auto' || 'incremental' }}
+          command: ${{ github.event_name == 'issue_comment' && github.event.comment.body || '' }}
+          comment-id: ${{ github.event.comment.id || 0 }}
+          automatic-review-limit: 5
+          expected-head: ${{ github.event.pull_request.head.sha || '' }}
+          guidance-file: .github/review-guidance.md
+          model: gpt-6-astra
+          priority: fast
+          base-cost-usd: "20.00"
+          max-cost-usd: "25.00"
+          ignore: "bun.lock,**/CHANGELOG.md,.agents/skills/**,.claude/skills/**"
