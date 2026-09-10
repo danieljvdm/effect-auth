@@ -103,6 +103,18 @@ export const verifyPackageExports = Effect.fn("verifyPackageExports")(
     for (const pkg of packages) {
       const base = `packages/${pkg.directory}`;
       const { manifest } = pkg;
+      const publicBarrels = new Set<string>();
+
+      for (const target of Object.values(manifest.exports)) {
+        const file = `${base}/${target.slice(2)}`;
+        const source = yield* parse(file);
+
+        if (
+          source.statements.length > 0 &&
+          source.statements.every((statement) => ts.isExportDeclaration(statement))
+        )
+          publicBarrels.add(file);
+      }
 
       if (!manifest.private) {
         const filenames = new Set(yield* fs.readDirectory(path.join(root, base, "src")));
@@ -238,7 +250,7 @@ export const verifyPackageExports = Effect.fn("verifyPackageExports")(
             /(?:^|\/)(?:test|tests|__tests__|fixtures)(?:\/|$)|\.(?:test|spec)\./.test(file) ||
             Object.entries(manifest.exports).some(
               ([key, target]) =>
-                (key === "./testing" || key.startsWith("./testing/")) &&
+                (key === "./Testing" || key.startsWith("./Testing/")) &&
                 target === `./${relative}/${filename}`,
             );
 
@@ -301,6 +313,15 @@ export const verifyPackageExports = Effect.fn("verifyPackageExports")(
 
               if (resolved.startsWith("packages/") && !resolved.startsWith(`${base}/`))
                 report(file, `Import ${specifier} must use the owning package's public module`);
+              if (
+                !testOnly &&
+                !publicBarrels.has(file) &&
+                publicBarrels.has(resolved.replace(/(?:\.ts)?$/, ".ts"))
+              )
+                report(
+                  file,
+                  `Import ${specifier} must go directly to its implementation, not a public barrel`,
+                );
               continue;
             }
 

@@ -637,6 +637,25 @@ require a fresh authoritative lookup or a new flow, never an automatic mutation
 retry. Pure `SessionContract`, `PasskeyContract` and `TotpContract` imports keep
 server implementations out of browser bundles.
 
+Public modules support both root namespaces and direct subpaths:
+
+```ts
+import { Identity, SessionContract } from "effect-auth";
+// The same modules, selected directly:
+import * as IdentityModule from "effect-auth/Identity";
+import * as SessionContractModule from "effect-auth/SessionContract";
+```
+
+Prefer a direct subpath when bundle size or module-loading cost matters. Named
+imports such as `import { stringSubjectId } from "effect-auth/Identity"` let a
+bundler discard unrelated identity operations. Root namespaces are convenient,
+but retaining a namespace as a value can retain its other exports. Native ESM
+loads the root's entire static dependency graph; tree shaking requires a bundler.
+Use the contract subpaths above for shared browser/server definitions and import
+optional adapters directly, for example `effect-auth/DrizzlePostgres`,
+`effect-auth/OpenIdClient`, or `effect-auth/PasskeyBrowser`. Install only the peers
+required by the selected adapters. `effect-auth/Testing` remains test-only.
+
 `Atom` owns authentication workflows and their state lifetimes. Mount account
 atoms in the current subject registry. Authentication completion and subject
 replacement settle together, disposing the previous registry before publishing

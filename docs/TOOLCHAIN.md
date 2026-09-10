@@ -31,9 +31,24 @@ and direct subpaths identify the same public module. Internal imports go directl
 to their owning implementation, without routing through self-barrels.
 
 The export check validates casing, namespace targets, build entries, and workspace
-dependencies. The purity check rejects production paths that reach test-only code.
+dependencies, including relative imports through the package's own public barrels.
+The purity check rejects production paths that reach test-only code.
 `effect-auth/Testing` is an explicit test-only entrypoint. Optional adapters remain
 separate exports, and `sideEffects: []` requires import-time code to stay free of I/O.
+
+The package build preserves implementation modules and native root namespaces in
+both JavaScript and declarations. Every root namespace target is also an explicit
+pack entry; the root resolver leaves those sibling imports external to the root
+entry so the bundler does not synthesize namespace objects or expose helper exports.
+Do not merge unrelated implementations into shared chunks: consumer bundlers can
+retain their initialization even when only one API is used.
+
+`vp run check:package-consumers` requires built packages and runs during `build`.
+It stages the publisher's manifests and built files with only required dependencies,
+bundles representative browser consumers, checks their declarations, and runs a native
+ESM consumer. It protects narrow identity imports, browser contracts, and root namespace
+identity without installing optional adapter peers. Reported bytes include Effect;
+they are diagnostics, not a fixed bundle-size budget.
 
 ## Contributor skills
 

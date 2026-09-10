@@ -61,6 +61,27 @@ export default defineConfig({
       "src/TotpContract.ts",
     ],
     dts: true,
+    // Preserve implementation boundaries so consumers can discard unused modules.
+    unbundle: true,
+    plugins: [
+      {
+        // Each target is also a pack entry. Keep native namespaces in JS and
+        // declarations instead of materializing objects that retain every export.
+        name: "preserve-root-namespaces",
+        resolveId: {
+          order: "pre",
+          handler(source, importer) {
+            if (
+              importer !== undefined &&
+              /\/src\/index(?:\.d)?\.ts$/.test(importer) &&
+              /^\.\/[A-Z]\w*(?:\.ts)?$/.test(source)
+            ) {
+              return { id: source.replace(/(?:\.ts)?$/, ".mjs"), external: true };
+            }
+          },
+        },
+      },
+    ],
     sourcemap: true,
   },
   test: { cache: false, silent: "passed-only", include: ["test/**/*.test.ts"] },
