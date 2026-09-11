@@ -132,6 +132,71 @@ local subjects bound to the provider/issuer/subject tuple, not provider email.
 Keep login and callback GETs public and inert. Private routes must call
 `auth.requireSession()`; `http.middleware` only supplies request context.
 
+## Use the authenticated provider profile
+
+The protocol result separates the stable provider/issuer/subject identity from
+`profile`. The profile includes available `displayName`, `handle`, `avatarUrl`,
+`profileUrl`, `email`, and `emailVerified`, plus bounded `providerData` with the
+provider's original field names and null values. GitHub names take precedence over
+usernames, with a username fallback when the name is empty or absent.
+
+`GitHubUserProfile` from `@yielded/auth/GitHub` covers every documented field in
+GitHub's authenticated [`/user` response](https://docs.github.com/en/rest/users/users#get-the-authenticated-user),
+including account metadata returned with `read:user`. `OidcUserProfile` from
+`@yielded/auth/OpenIdClient` covers the [standard OIDC user claims](https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims)
+present in a verified ID token. These adapters do not add scopes, fetch email lists
+or UserInfo, or retain unknown response fields, tokens, nonce, or protocol secrets
+as profile data. Missing profile fields remain absent; GitHub nullable fields remain
+null in `providerData`. GitHub's `/user` email is not asserted to be verified.
+
+For returning sign-in, `ClaimsForOAuth.resolve(credential, verified)` receives the
+fresh verified profile only after the provider identity matches an active local
+credential. Existing resolvers that accept only `credential` continue to work.
+Select the public session fields deliberately:
+
+```ts [profile-claims.ts]
+import { Effect, Layer } from "effect";
+
+import { AppAuth, accounts } from "./auth";
+
+export const OAuthClaimsLive = Layer.succeed(AppAuth.strategies.github.ClaimsForOAuth, {
+  resolve: (credential, verified) =>
+    accounts.claims(credential.revision.subjectId).pipe(
+      Effect.map((local) => ({
+        ...local,
+        displayName: verified.profile?.displayName ?? local.displayName,
+      })),
+    ),
+});
+```
+
+For first registration, the original profile is retained in the server-side
+`OAuthRegistrationIntent.profile` snapshot. Registration authority callbacks and
+Drizzle's `encodeSubjectInsert({ intent, registration }, ids)` can read it when
+provisioning the local account. The browser's `RegistrationRequired` result contains
+only the reference, expiry, and return target; it does not receive or resubmit the
+profile. Existing intents without a profile remain valid. No account, credential,
+session, or database reset is required.
+
+Provider-specific data can be narrowed with the exported Schema:
+
+```ts
+import { GitHubUserProfile } from "@yielded/auth/GitHub";
+import { Schema } from "effect";
+
+const decodeGitHubProfile = Schema.decodeUnknownEffect(GitHubUserProfile);
+// After checking the trusted identity.provider is "github":
+// const github = yield* decodeGitHubProfile(verified.profile?.providerData);
+// github.name, github.login, github.bio, github.company, github.plan, ...
+```
+
+Profiles are metadata, not local identity, roles, MFA assurance, or permission to
+link accounts. A provider's email verification flag does not grant automatic linking.
+Profile URLs are not trusted redirect or server-fetch targets. Keep full provider
+snapshots out of logs and expose only the fields your application needs in session
+claims. Connected-grant metadata also carries the captured profile under its existing
+account authorization; refresh does not promise to update that snapshot.
+
 ## Redirect to GitHub
 
 <!-- prettier-ignore -->

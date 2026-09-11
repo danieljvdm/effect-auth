@@ -11,3 +11,5 @@ export {
   makeOpenIdClientOAuthProtocol,
   openIdClientOAuthProtocolLayer,
 } from "./oauth/openid-client/protocol";
+
+export { OidcUserProfile } from "./oauth/openid-client/profile";

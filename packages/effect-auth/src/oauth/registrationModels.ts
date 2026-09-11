@@ -5,6 +5,7 @@ import { TokenDigest } from "../Schema";
 import {
   OAuthClaimId,
   OAuthCommandId,
+  OAuthDisplayProfile,
   OAuthExternalIdentity,
   OAuthInstant,
   OAuthModuleId,
@@ -46,6 +47,9 @@ export const OAuthRegistrationIntent = Schema.Struct({
   claimId: OAuthClaimId,
   claimedAtMillis: OAuthInstant,
   identity: OAuthExternalIdentity,
+  /** Original authenticated provider snapshot, available only to server-side
+   * provisioning authority. It is not caller-supplied registration data. */
+  profile: Schema.optionalKey(OAuthDisplayProfile),
   verifiedAtMillis: OAuthInstant,
   credentialDigest: OAuthRegistrationBearerDigest,
   issuedAtMillis: OAuthInstant,
