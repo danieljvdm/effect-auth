@@ -120,8 +120,8 @@ to rename it. Middleware and annotations compose normally, with their requiremen
 visible in Layer types. Configure paths in the contract's `basePath` rather than
 prefixing generated endpoints afterward.
 
-The [shared contract](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-contract.ts)
-and [server example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-server.ts)
+The [shared contract](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/auth-contract.ts)
+and [server example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/auth-server.ts)
 show a complete group and handler pair.
 
 ### Cookies and protected handlers
@@ -145,7 +145,7 @@ attach its `RequireSession` middleware, and read `CurrentSession` in handlers.
 Provide `http.securityLayer(contract)` and apply `http.middleware` to the route
 Layer. Its cookie name must match the adapter. It declares 401 for absent or
 invalid sessions and 503 for unavailable verification. See the
-[session HTTP example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/session-http.ts).
+[session HTTP example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/session-http.ts).
 
 Named mutations enforce Origin and CSRF before side effects, including local
 calls from application routes. Raw strategy methods are treated as mutations.
@@ -279,7 +279,7 @@ export function Account() {
 
 Keep multi-step logic in Effects and workflow atoms. Components render and dispatch;
 promise-mode handlers return the dispatch promise without `.then` chains. See the
-[React example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-react.ts).
+[React example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/auth-react.ts).
 
 ### Invalidation and account lifetime
 
@@ -328,7 +328,7 @@ not fetch. Browser query reads verify the live cookie, and a result, failure, or
 account change permanently retires the seed. Never share server registries,
 clients, or request-bearing memo maps across requests, or apply generic late
 hydration updates to auth atoms. The
-[SSR example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-ssr.ts)
+[SSR example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/auth-ssr.ts)
 shows rendering, hydration, and unmount finalizers.
 
 ## Compose a passkey workflow

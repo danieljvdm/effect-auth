@@ -52,11 +52,11 @@ export default defineConfig({
         items: [{ text: "Public modules", link: "/reference/modules" }],
       },
     ],
-    socialLinks: [{ icon: "github", link: "https://github.com/danieljvdm/effect-auth" }],
+    socialLinks: [{ icon: "github", link: "https://github.com/yielded-dev/auth" }],
     search: { provider: "local" },
     outline: { level: [2, 3], label: "On this page" },
     docFooter: { prev: "Previous", next: "Continue" },
     externalLinkIcon: true,
-    editLink: { pattern: "https://github.com/danieljvdm/effect-auth/edit/main/docs/:path" },
+    editLink: { pattern: "https://github.com/yielded-dev/auth/edit/main/docs/:path" },
   },
 });

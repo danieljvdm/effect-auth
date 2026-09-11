@@ -200,6 +200,6 @@ export const readProfile = Effect.fn("app.readGitHubProfile")(
 ```
 
 `connected` and its permission `profile` are application configuration. The
-[GitHub connection composition](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/github-oauth-app.ts)
+[GitHub connection composition](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/github-oauth-app.ts)
 shows their setup. Refresh, revocation, and access use share durable grant state;
 never return the token from the callback or retry uncertain refreshes.

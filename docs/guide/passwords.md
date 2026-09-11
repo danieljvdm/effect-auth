@@ -114,7 +114,7 @@ Keep continuation credentials in private delivery. A consumed proof or an unknow
 commit outcome is not permission to repeat a password mutation. Prepared-password
 intents bind the original action, credential revision, and replacement verifier.
 
-See the [complete password composition](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/password-methods.ts)
+See the [complete password composition](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/password-methods.ts)
 for recovery and factor authorization.
 
 </details>

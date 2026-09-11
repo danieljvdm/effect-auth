@@ -88,4 +88,4 @@ a new code. SMS proves possession; it does not provide phishing resistance.
 
 Phone registration and number changes use separate lifecycle operations.
 Do not link accounts because their supplied phone strings match. See the
-[phone application composition](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/phone-application.ts).
+[phone application composition](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/phone-application.ts).
