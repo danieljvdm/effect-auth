@@ -71,8 +71,7 @@
     "./PasskeyContract": "./src/PasskeyContract.ts",
     "./TotpContract": "./src/TotpContract.ts",
     "./AuthContract": "./src/AuthContract.ts",
-    "./Client": "./src/Client.ts",
-    "./React": "./src/React.ts"
+    "./Client": "./src/Client.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -90,7 +89,6 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",
-    "@effect/atom-react": "catalog:",
     "@effect/platform-bun": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/sql-d1": "catalog:",
@@ -105,21 +103,15 @@
     "@effect/vitest": "catalog:",
     "@simplewebauthn/browser": "catalog:",
     "@simplewebauthn/server": "catalog:",
-    "@types/react": "catalog:",
-    "@types/react-dom": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "effect-cf": "catalog:",
     "openid-client": "catalog:",
-    "react": "catalog:",
-    "react-dom": "catalog:",
-    "scheduler": "catalog:",
     "tldts": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:"
   },
   "peerDependencies": {
-    "@effect/atom-react": "^4.0.0-rc.112",
     "@effect/sql-d1": ">=4.0.0-rc.112",
     "@effect/sql-libsql": ">=4.0.0-rc.112",
     "@effect/sql-mysql2": ">=4.0.0-rc.112",
@@ -135,7 +127,6 @@
     "effect": "^4.0.0-rc.112",
     "effect-cf": "^0.40.0",
     "openid-client": ">=6.8.8 <7",
-    "react": ">=19.0.0 <20",
     "tldts": ">=7.4.11 <8"
   },
   "peerDependenciesMeta": {
@@ -182,12 +173,6 @@
       "optional": true
     },
     "tldts": {
-      "optional": true
-    },
-    "@effect/atom-react": {
-      "optional": true
-    },
-    "react": {
       "optional": true
     }
   }

@@ -4,20 +4,16 @@ import * as Client from "effect-auth/Client";
 
 import { AuthApi } from "./auth-contract";
 
-// Keep this Scope alive for the browser application.
-export const makeClient = Effect.fn("example.authClient")(function* () {
-  const client = yield* Client.make(AuthApi, { baseUrl: "https://app.example.com" });
-  const auth = yield* AuthAtom.make(client.auth);
-
-  // Read auth.lifetime.current in its controlRegistry. Mount the account UI in
-  // current.registry; it is disposed and replaced whenever authentication changes.
-  // Components read auth.session and dispatch auth.signIn / auth.signOut.
-  return { client, auth };
-});
+// Both constructors are inert. A registry or application Layer owns acquisition.
+export const AppClient = Client.make(AuthApi, { baseUrl: "https://app.example.com" });
+export const auth = AuthAtom.make(AppClient);
 
 export const currentMember = Effect.fn("example.remoteMember")(function* () {
-  const client = yield* Client.make(AuthApi, { baseUrl: "https://app.example.com" });
+  const client = yield* AppClient;
   const session = yield* client.auth.getSession();
 
   return session?.claims.displayName ?? null;
 });
+
+// Uses the same scoped client and account lifetime as the generated auth atoms.
+export const memberName = auth.runtime.atom(currentMember());

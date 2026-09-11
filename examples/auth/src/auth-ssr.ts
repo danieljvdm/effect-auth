@@ -1,55 +1,65 @@
-import { Effect, Layer, Schema } from "effect";
+import { RegistryContext } from "@effect/atom-react";
+import { Effect, Schema } from "effect";
 import * as AuthAtom from "effect-auth/Atom";
-import * as Client from "effect-auth/Client";
+import { AtomRegistry } from "effect/unstable/reactivity";
 import { createElement } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 
+import { AppClient } from "./auth-client";
 import { AuthApi } from "./auth-contract";
-import { BrowserAuth, MemberPanel } from "./auth-react";
+import { MemberPanel } from "./auth-react";
 
 const Session = AuthApi.actions.getSession.route.operation.rpc.successSchema;
 
-// Call once inside the request Scope or browser application Scope. A host Atom
-// runtime can use Atom.context({ memoMap }) to share this memo map as well.
-const acquireAuth = Effect.fn("example.acquireAuth")(function* (initialSession: unknown) {
-  const memoMap = yield* Layer.makeMemoMap;
-  const client = yield* Client.make(AuthApi, { baseUrl: "https://app.example.com" });
+// Each request and browser root gets its own registry, client Scope and seed.
+const acquirePage = Effect.fn("example.acquirePage")(function* (initialSession: unknown) {
+  const auth = AuthAtom.make(AppClient, { initialSession });
 
-  return yield* AuthAtom.make(client.auth, { memoMap, initialSession });
+  const registry = yield* Effect.acquireRelease(
+    Effect.sync(() => AtomRegistry.make()),
+    (value) => Effect.sync(() => value.dispose()),
+  );
+
+  // Decode display data and acquire services before synchronous rendering.
+  // Acquiring the runtime does not execute the session query.
+  yield* AtomRegistry.mount(registry, auth.runtime);
+  yield* AtomRegistry.getResult(registry, auth.runtime);
+
+  return { auth, registry };
 });
 
-const page = (auth: ReturnType<typeof BrowserAuth.useAuth>) =>
-  createElement(BrowserAuth.Provider, { value: auth }, createElement(MemberPanel));
+const page = ({ auth, registry }: Effect.Success<ReturnType<typeof acquirePage>>) =>
+  createElement(
+    RegistryContext.Provider,
+    { value: registry },
+    createElement(MemberPanel, { auth }),
+  );
 
-// The request handler passes the result of its local `yield* auth.getSession()`.
-// Close that request's Scope after rendering. Only the encoded public session
-// travels through the framework's data serializer; no client or registry does.
+// The request handler passes its local auth.getSession() result. Serialize only
+// the encoded public session with the framework, then close the request Scope.
 export const renderAuthPage = Effect.fn("example.renderAuthPage")(function* (
   session: typeof Session.Type,
 ) {
   const initialSession = yield* Schema.encodeEffect(Session)(session);
-  const auth = yield* acquireAuth(initialSession);
-  const html = yield* Effect.sync(() => renderToString(page(auth)));
+  const bindings = yield* acquirePage(initialSession);
+  const html = yield* Effect.sync(() => renderToString(page(bindings)));
 
   return { html, initialSession };
 });
 
-// Keep the caller's Scope open until the browser application unmounts. The
-// finalizer unmounts React before closing auth resources. Do not return these
-// live bindings from Effect.scoped: that would close them before React uses them.
+// Keep the caller's Scope open until the browser application unmounts.
 export const hydrateAuthPage = Effect.fn("example.hydrateAuthPage")(function* (
   container: Element,
   initialSession: unknown,
 ) {
-  const auth = yield* acquireAuth(initialSession);
+  const bindings = yield* acquirePage(initialSession);
 
   yield* Effect.acquireRelease(
-    Effect.sync(() => hydrateRoot(container, page(auth))),
+    Effect.sync(() => hydrateRoot(container, page(bindings))),
     (root) => Effect.sync(() => root.unmount()),
   );
 
-  // The seed matches the server's first render; the live session query verifies
-  // browser credentials. A sign-out or account change permanently drops the seed.
-  return auth;
+  // Live verification replaces the display seed. Account changes permanently drop it.
+  return bindings;
 });

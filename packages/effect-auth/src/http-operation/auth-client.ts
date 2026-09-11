@@ -1,5 +1,4 @@
-import type { Scope } from "effect";
-import { Effect, Semaphore } from "effect";
+import { Context, Effect, Layer, Scope, Semaphore } from "effect";
 
 import type { AnyAuthAction, AuthActions } from "../operations/actions";
 import {
@@ -31,7 +30,12 @@ export interface AuthClientState {
 }
 
 export type AuthClientEvent =
-  | { readonly _tag: "Transition"; readonly state: AuthClientState; readonly action?: string }
+  | {
+      readonly _tag: "Transition";
+      readonly state: AuthClientState;
+      readonly action?: string;
+      readonly origin?: object;
+    }
   | { readonly _tag: "Mutation"; readonly name: string };
 
 /** Internal bridge shared with Atom. Subscriptions belong to their host Scope;
@@ -48,7 +52,7 @@ export interface AuthClientController<Actions extends AuthActions> {
   readonly call: <Name extends keyof Actions>(
     name: Name,
     input: RouteInput<Actions[Name]["route"]>,
-    options?: { readonly notifyMutation?: boolean },
+    options?: { readonly notifyMutation?: boolean; readonly origin?: object },
   ) => Effect.Effect<
     RouteSuccess<Actions[Name]["route"]>,
     RouteFailure<Actions[Name]["route"]> | OperationHttpError,
@@ -72,10 +76,10 @@ export type AuthClient<Actions extends AuthActions> = {
 
 /** Derive one named client from the shared contract. Each operation makes one
  * attempt. Authentication transitions also notify any scoped Atom consumers. */
-export const make = Effect.fn("Client.make")(function* <Actions extends AuthActions>(
+const acquire = Effect.fn("Client.make")(function* <Actions extends AuthActions>(
   contract: { readonly actions: Actions },
   options: ClientOptions,
-): Effect.fn.Return<{ readonly auth: AuthClient<Actions> }, OperationHttpError> {
+): Effect.fn.Return<{ readonly auth: AuthClient<Actions> }, OperationHttpError, Scope.Scope> {
   const transport = yield* makeTransport({
     ...options,
     csrfHeader: options.csrf?.header ?? "x-effect-auth-csrf",
@@ -85,6 +89,7 @@ export const make = Effect.fn("Client.make")(function* <Actions extends AuthActi
   const gate = yield* Semaphore.make(1);
   const listeners = new Set<(event: AuthClientEvent) => Effect.Effect<void>>();
   let state: AuthClientState = { subject: null, generation: 0 };
+  let closed = false;
 
   const notify = (event: AuthClientEvent) =>
     Effect.forEach([...listeners], (listener) => listener(event), {
@@ -95,9 +100,15 @@ export const make = Effect.fn("Client.make")(function* <Actions extends AuthActi
   const publish = Effect.fn("Client.publishSubject")(function* (
     subject: string | null,
     action?: string,
+    origin?: object,
   ) {
     state = { subject, generation: state.generation + 1 };
-    yield* notify({ _tag: "Transition", state, ...(action === undefined ? {} : { action }) });
+    yield* notify({
+      _tag: "Transition",
+      state,
+      ...(action === undefined ? {} : { action }),
+      ...(origin === undefined ? {} : { origin }),
+    });
   });
 
   const completeAuthentication = makeAuthenticationCompletion(transport, gate, publish);
@@ -118,8 +129,10 @@ export const make = Effect.fn("Client.make")(function* <Actions extends AuthActi
   >(
     name: Name,
     input: RouteInput<Actions[Name]["route"]>,
-    callOptions?: { readonly notifyMutation?: boolean },
+    callOptions?: { readonly notifyMutation?: boolean; readonly origin?: object },
   ) {
+    if (closed) return yield* OperationHttpError.make({ reason: "stale-response" });
+
     const action = contract.actions[name];
     const project = action.subject;
     const started = yield* transport.generation;
@@ -132,7 +145,7 @@ export const make = Effect.fn("Client.make")(function* <Actions extends AuthActi
         // Notify within credential settlement: disposing an account registry can
         // interrupt the atom that dispatched this call before a later success tap.
         const complete = makeAuthenticationCompletion(transport, gate, (subject) =>
-          publish(subject, String(name)),
+          publish(subject, String(name), callOptions?.origin),
         );
 
         const value = yield* complete<Actions[Name]["route"]>(action.route, input, (success) =>
@@ -197,6 +210,17 @@ export const make = Effect.fn("Client.make")(function* <Actions extends AuthActi
       ),
   };
 
+  yield* Scope.addFinalizer(
+    yield* Effect.scope,
+    gate.withPermits(1)(
+      Effect.gen(function* () {
+        closed = true;
+        yield* transport.transition;
+        listeners.clear();
+      }),
+    ),
+  );
+
   const methods = Object.fromEntries(
     Object.keys(contract.actions).map((name) => [
       name,
@@ -210,3 +234,40 @@ export const make = Effect.fn("Client.make")(function* <Actions extends AuthActi
   // the mapped key/signature relationship after constructing the property table.
   return { auth: Object.freeze(methods) as AuthClient<Actions> };
 });
+
+/** Identifier for a configured client service, separate from the server service. */
+export interface ClientService<Id extends string, Actions extends AuthActions> {
+  readonly namespace: Id;
+  readonly actions: Actions;
+  readonly _client: unique symbol;
+}
+
+export interface ClientDefinition<
+  Id extends string,
+  Actions extends AuthActions,
+> extends Context.Service<ClientService<Id, Actions>, { readonly auth: AuthClient<Actions> }> {
+  readonly contract: { readonly namespace: Id; readonly actions: Actions };
+  readonly make: Effect.Effect<
+    { readonly auth: AuthClient<Actions> },
+    OperationHttpError,
+    Scope.Scope
+  >;
+  readonly layer: Layer.Layer<ClientService<Id, Actions>, OperationHttpError>;
+}
+
+/** Define a yieldable client without acquiring resources. Provide its layer once
+ * in the application Scope, or yield its make Effect for direct acquisition.
+ * Every instance owns its credential settlement and scoped Atom subscriptions. */
+export const make = <const Id extends string, Actions extends AuthActions>(
+  contract: { readonly namespace: Id; readonly actions: Actions },
+  options: ClientOptions,
+): ClientDefinition<Id, Actions> => {
+  const service = Context.Service<
+    ClientService<Id, Actions>,
+    { readonly auth: AuthClient<Actions> }
+  >()(`${contract.namespace}/client`);
+
+  const create = acquire(contract, options);
+
+  return Object.assign(service, { contract, make: create, layer: Layer.effect(service, create) });
+};

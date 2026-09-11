@@ -111,8 +111,10 @@ import * as Client from "effect-auth/Client";
 
 import { AuthApi } from "./auth-contract";
 
+const AppClient = Client.make(AuthApi, { baseUrl: "https://app.example.com" });
+
 const currentMember = Effect.gen(function* () {
-  const client = yield* Client.make(AuthApi, { baseUrl: "https://app.example.com" });
+  const client = yield* AppClient;
   const session = yield* client.auth.getSession();
 
   return session?.claims.displayName ?? null;
@@ -124,93 +126,110 @@ Calls such as `client.auth.signIn({ email, password })` and
 CSRF transport settings; application code does not construct request headers.
 Each call makes one attempt, with typed errors and schema decoding requirements.
 
-For React, install the optional `@effect/atom-react`, `react`, and `scheduler`
-peers and define the provider once:
+Define the client service and its atoms outside the UI. Both constructors are
+inert; the application registry owns acquisition and finalization:
 
-```tsx
-import * as AuthReact from "effect-auth/React";
-import { useAtomValue, useAtomSet } from "@effect/atom-react";
+```ts
+import * as AuthAtom from "effect-auth/Atom";
+import * as Client from "effect-auth/Client";
 
-export const BrowserAuth = AuthReact.make(AuthApi, {
+export const AppClient = Client.make(AuthApi, {
   baseUrl: "https://app.example.com",
 });
+export const auth = AuthAtom.make(AppClient);
+```
 
-function App() {
-  return (
-    <BrowserAuth.Provider fallback={<Loading />}>
-      <Routes />
-    </BrowserAuth.Provider>
-  );
-}
+`Client.make` declares a yieldable service, matching `Auth.make`. Provide
+`AppClient.layer` at an Effect program boundary, or yield `AppClient.make` inside
+a Scope for direct construction. Methods keep their codec requirements visible.
+`AuthAtom.make` supplies that service to an Atom runtime and generates importable
+queries and mutations; `auth.session` aliases `auth.getSession`.
+
+```ts
+const currentMember = Effect.gen(function* () {
+  const client = yield* AppClient;
+  const session = yield* client.auth.getSession();
+  return session?.claims.displayName ?? null;
+});
+
+export const memberName = auth.runtime.atom(currentMember);
+```
+
+These effects and the generated atoms use the same client instance. Direct calls
+through a separately provided `AppClient.layer` acquire a separate instance unless
+the host deliberately shares the Layer memo map. Pass a `services` Layer to
+`AuthAtom.make` when the contract's response codecs need services; this option is
+required by its types when necessary.
+Its optional `layer` replaces the configured client Layer for tests or a custom
+implementation while retaining the same service and action types.
+
+React uses the standard `@effect/atom-react` adapter and its ordinary application
+`RegistryProvider`. Effect Auth has no React provider or hooks:
+
+```tsx
+import { useAtomValue, useAtomSet } from "@effect/atom-react";
+import { auth } from "./auth-client";
 
 function Account() {
-  const auth = BrowserAuth.useAuth();
   const session = useAtomValue(auth.session);
   const signOut = useAtomSet(auth.signOut);
-
   return <AccountView session={session} onSignOut={() => signOut(undefined)} />;
 }
 ```
 
-The provider owns its client, Scope, and registry switching. `session` is an
-`AsyncResult` query; each declared action also has a named atom. The same client
-is available as `auth.client.auth`. Each owned provider acquires independently;
-keep one around the account subtree. Put account-specific application atoms
-inside it so account changes dispose their state too. Place state intended to
-survive sign-out in an outer application registry. Setup failures reach the
-application's React error boundary. Keep provider configuration stable and use a
-React key to remount when changing it. See the [React example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-react.ts).
+Queries expose loading, success and failure through `AsyncResult`, including
+client setup errors. Keep multi-step work in Effects and workflow atoms. React
+renders and dispatches; promise-mode handlers return the dispatch promise without
+`.then` chains. See the [client example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-client.ts)
+and [React example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-react.ts).
 
-Without React, or when the application already owns an Effect Scope, construct
-the same bindings directly:
+Auth queries refresh automatically after mutations. Declare extra reactivity keys
+only for application dependencies, and use the same runtime factory as the
+queries that subscribe to those keys:
 
 ```ts
-const memoMap = yield * Layer.makeMemoMap;
-const appRuntime = Atom.context({ memoMap });
-const client = yield * Client.make(AuthApi, { baseUrl: "https://app.example.com" });
-const auth =
-  yield *
-  AuthAtom.make(client.auth, {
-    memoMap,
-    reactivityKeys: { signOut: ["projects", "profile"] },
-  });
+const appRuntime = Atom.context();
+const auth = AuthAtom.make(AppClient, {
+  runtime: appRuntime,
+  reactivityKeys: { signIn: ["projects"], signOut: ["projects"] },
+});
 ```
 
-Use the same memo map for existing application runtimes whose queries must share
-invalidation. Each successful mutation invalidates the auth queries and its
-additional application keys. Account transitions settle invalidation before
-interruption can escape from the disposing account registry. Direct calls through
-the same `client.auth` publish the same transitions and invalidations. Private
-reveals remain in their finite collector, outside query state.
+The default factory is `Atom.runtime`. It owns a separate memo map per registry;
+an explicitly shared memo map can connect multiple runtimes. Account transitions
+settle invalidation before interruption can escape from account-scoped work.
+Private reveals remain in their finite collector, outside query state.
 
-Render an already acquired handle with `<BrowserAuth.Provider value={auth}>`.
-The provider borrows that handle; the host keeps its Scope alive and closes it
-after unmounting. `AuthReact.fromEffect(acquire)` accepts a custom acquisition
-Effect whose dependencies have already been provided. `AuthReact.make` accepts
-`services` for contract codec services, requiring that Layer in its options when
-necessary. No async work runs while defining a provider.
+`auth.runtime` owns account-scoped queries and custom workflows. Internally, the
+old account registry is disposed before the replacement is published, clearing
+cached values and cancelling old work. State read or written inside these
+workflows belongs to that account registry. Ordinary application atoms outside
+this runtime retain their normal application lifetime; reactivity keys refresh
+them but do not make them account-scoped.
 
-For SSR, an owned provider renders only its fallback on the server. For
-session-aware rendering, acquire a handle in each request's Scope and pass the
-encoded result of the local `auth.getSession()` as `AuthAtom.make`'s
-`initialSession` option. Render with `Provider value`, serialize only that public
-session through the framework's serializer, and close the request Scope. Before
-browser hydration, acquire a separate handle with the same seed in the browser
-application's Scope. Never share a server registry, client, or request-bearing
-memo map across requests. The [SSR example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-ssr.ts)
-shows rendering, hydration, and unmount finalizers.
+Named auth mutations keep their own admitted sign-in or sign-out alive until its
+public result settles. Dispatch a mutation explicitly to execute it; refreshing
+its result view does not resend credentials. An unrelated account change interrupts pending mutations
+and clears previous results. Custom account-scoped workflows retire on account
+replacement, including when they complete authentication; awaiting callers receive
+interruption rather than waiting indefinitely. Use an application-owned workflow
+lifetime for work intentionally spanning multiple accounts.
 
-The initial session is schema-decoded display data, not client authority. Server
-rendering does not fetch. Browser reads still verify the live cookie; a result,
-failure, or account transition permanently drops the seed. It cannot reappear
-after sign-out. Do not hydrate auth atoms through generic late hydration updates.
+For SSR, the default atoms render `Initial` without fetching. For session-aware
+rendering, define request-local atoms with the encoded local `auth.getSession()`
+result as `initialSession`. Acquire `auth.runtime` in a request-owned registry
+before rendering to decode the seed and build its services, then supply that
+registry through the standard Atom adapter. Serialize only the public session
+through the framework. Browser hydration uses a separate registry and binding
+with the same display seed; close each registry with its host Scope. Never share
+a server registry, client instance, or request-bearing memo map across requests.
+The [SSR example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-ssr.ts)
+shows rendering, hydration, and unmount finalizers without auth-specific React APIs.
 
-Advanced non-React hosts can still observe `auth.lifetime.current` through its
-`controlRegistry` and mount action/account atoms in `current.registry`.
-`auth.runtime` provides the lifetime service for custom workflow atoms. Keep
-multi-step flows in Effect and declare mutation reactivity keys; React renders
-and dispatches, including returning promise-mode dispatches without `.then`
-chains that orchestrate authentication.
+The initial session is schema-decoded display data, not client authority. Runtime
+acquisition does not fetch the session. Browser query reads verify the live cookie;
+a result, failure, or account transition permanently drops the seed. It cannot
+reappear after sign-out. Do not apply generic late hydration updates to auth atoms.
 
 `AuthContract.action` defines an additional action's input, success, and error
 schemas, query or mutation mode, and selected implementation method/strategy.

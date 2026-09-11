@@ -1,18 +1,14 @@
-import { useAtom, useAtomValue } from "@effect/atom-react";
+import { RegistryProvider, useAtom, useAtomValue } from "@effect/atom-react";
 import { Effect } from "effect";
-import * as AuthReact from "effect-auth/React";
 import { createElement } from "react";
 
-import { AuthApi } from "./auth-contract";
+import { AppClient, auth } from "./auth-client";
 
-// This definition is safe to share. Each mounted Provider acquires its own client
-// and owns the registries that are replaced when authentication changes.
-export const BrowserAuth = AuthReact.make(AuthApi, { baseUrl: "https://app.example.com" });
-
-export function MemberPanel() {
-  const auth = BrowserAuth.useAuth();
-  const session = useAtomValue(auth.session);
-  const [signOutResult, signOut] = useAtom(auth.signOut);
+// Usually import auth directly. Explicit props also support request-local SSR bindings.
+export function MemberPanel(props: { readonly auth?: typeof auth }) {
+  const atoms = props.auth ?? auth;
+  const session = useAtomValue(atoms.session);
+  const [signOutResult, signOut] = useAtom(atoms.signOut);
 
   if (session._tag === "Initial") return createElement("p", null, "Loading session…");
   if (session._tag === "Failure")
@@ -31,20 +27,15 @@ export function MemberPanel() {
   );
 }
 
-// The application can wrap this in its usual error boundary for setup failures.
-// Server rendering uses the fallback until a request-owned value is supplied.
+// Use the application's existing registry when it already has one.
 export function BrowserApp() {
-  return createElement(
-    BrowserAuth.Provider,
-    { fallback: createElement("p", null, "Loading session…") },
-    createElement(MemberPanel),
-  );
+  return createElement(RegistryProvider, null, createElement(MemberPanel));
 }
 
-// Services and workflow atoms can use the same client. A direct call still
-// updates the provider's authentication lifetime and invalidates its queries.
-export const signOutFromEffect = Effect.fn("example.signOutFromEffect")(function* (
-  auth: ReturnType<typeof BrowserAuth.useAuth>,
-) {
-  return yield* auth.client.auth.signOut();
+// Run through the same auth runtime when sharing the browser instance, or
+// provide AppClient.layer at a separate program boundary for a fresh client.
+export const signOutFromEffect = Effect.fn("example.signOutFromEffect")(function* () {
+  const client = yield* AppClient;
+
+  return yield* client.auth.signOut();
 });
