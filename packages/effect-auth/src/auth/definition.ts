@@ -6,6 +6,8 @@ export type ClaimsCodec = Schema.Codec<unknown, unknown, unknown, unknown>;
 export type AuthMethod = (...args: never[]) => Effect.Effect<unknown, unknown, unknown>;
 
 export interface BuiltStrategy {
+  /** This method bundle completes authentication through the shared session authority. */
+  readonly completion?: boolean;
   readonly make: Effect.Effect<Readonly<Record<string, AuthMethod>>, unknown, unknown>;
 }
 

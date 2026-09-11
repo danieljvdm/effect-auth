@@ -180,7 +180,11 @@ export const phoneConsumer = Effect.gen(function* () {
 
     const as = <A, E, R>(invocation: AuthInvocation, effect: Effect.Effect<A, E, R>) =>
       effect.pipe(
-        Effect.provideService(AuthRequest, { invocation, credentialCommandSink: collect }),
+        Effect.provideService(AuthRequest, {
+          invocation,
+          credentials: {},
+          credentialCommandSink: collect,
+        }),
         Effect.provideService(PhoneRequestContext, {
           networkKey: Redacted.make("trusted-gateway/network-a"),
         }),

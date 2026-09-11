@@ -7,6 +7,7 @@ import {
 } from "../operations/credentials";
 import { AuthConfigurationError } from "./AuthConfigurationError";
 import { AuthRequest } from "./AuthRequest";
+import type { SessionApiError } from "./session";
 
 /** The same validated invocations used by local and transport callers. */
 export type AuthMethod = (
@@ -27,7 +28,7 @@ type BoundMethod<M extends AuthMethod, Provided> = (
     : [input: Parameters<M>[1]]
 ) => Effect.Effect<
   Effect.Success<ReturnType<M>>,
-  Effect.Error<ReturnType<M>>,
+  Effect.Error<ReturnType<M>> | SessionApiError,
   | AuthRequest
   | Exclude<
       Effect.Services<ReturnType<M>>,
@@ -41,9 +42,11 @@ export const makeAuthStrategy = <
   Provided,
   E,
   R,
+  const Completion extends boolean = false,
 >(
   methods: Methods & { readonly then?: never } & Record<Exclude<keyof Methods, string>, never>,
   layer: Layer.Layer<Provided, E, R>,
+  options?: { readonly completion: Completion },
 ) => {
   type Result = ReturnType<Methods[keyof Methods]>;
 
@@ -59,6 +62,7 @@ export const makeAuthStrategy = <
   >;
 
   return Object.freeze({
+    completion: (options?.completion ?? false) as false | NoInfer<Completion>,
     make: Effect.gen(function* () {
       if (entries.some(([name]) => name === "then"))
         return yield* AuthConfigurationError.make({ reason: "method" });
@@ -82,9 +86,19 @@ export const makeAuthStrategy = <
           Effect.fn(`Auth.${name}`)(function* (input: never) {
             // Resolve before providing the shared handler context: callers never get captured.
             const request = yield* AuthRequest;
+
+            // Raw strategy methods are conservatively mutations. Only a trusted
+            // named query declaration can admit a read without mutation policy.
+            if (request.actionMode !== "query" && request.beforeMutation !== undefined)
+              yield* request.beforeMutation;
+
+            const invocation = yield* (
+              request.resolveInvocation ?? Effect.succeed(request.invocation)
+            );
+
             const revealCollector = request.revealCommandCollector ?? unsupportedRevealCollector;
 
-            return yield* invoke(request.invocation, input).pipe(
+            return yield* invoke(invocation, input).pipe(
               Effect.provideService(AuthCredentialCommandCollector, request.credentialCommandSink),
               Effect.provideService(AuthRevealCommandCollectorService, revealCollector),
               Effect.provide(services),

@@ -1,7 +1,7 @@
 import type { Scope } from "effect";
 import { Effect } from "effect";
-import type { Atom, Reactivity } from "effect/unstable/reactivity";
-import { AtomRegistry } from "effect/unstable/reactivity";
+import type { Atom } from "effect/unstable/reactivity";
+import { AtomRegistry, Reactivity } from "effect/unstable/reactivity";
 
 import type { OperationFetchClient } from "../http-operation/client";
 import type { AnyRoute, RouteInput, RouteSuccess } from "../http-operation/contract";
@@ -79,7 +79,12 @@ export const mutation = <Route extends AnyRoute, RuntimeError>(
       inLifetime(
         Effect.gen(function* () {
           if (options.subject !== undefined)
-            return yield* completeAuthentication(route, input, options.subject.fromSuccess);
+            return yield* completeAuthentication(
+              route,
+              input,
+              options.subject.fromSuccess,
+              options.reactivityKeys,
+            );
           const { client } = yield* AuthAtomLifetime;
 
           return yield* client.call(route, input);
@@ -94,33 +99,14 @@ const completeAuthentication = Effect.fn("AuthAtom.completeAuthentication")(func
   route: Route,
   input: RouteInput<Route>,
   subject: (value: RouteSuccess<Route>) => string | null | undefined,
+  reactivityKeys: ReactivityKeys,
 ) {
   const lifetime = yield* AuthAtomLifetime;
+  const reactivity = yield* Reactivity.Reactivity;
 
-  return yield* Effect.uninterruptible(
-    Effect.gen(function* () {
-      let nextSubject: string | null | undefined;
-
-      const value = yield* lifetime.client.call(route, input, {
-        replaceSubject: (success) => {
-          nextSubject = subject(success);
-
-          return nextSubject !== undefined;
-        },
-      });
-
-      // Undefined keeps a pending multi-factor workflow in this registry; an
-      // authenticated subject or explicit sign-out publishes a fresh lifetime.
-      if (nextSubject !== undefined) yield* lifetime.replaceSubject(nextSubject);
-
-      return value;
-    }).pipe(
-      // A failed transport or projector can follow a credential response already
-      // applied by the browser. Remove the old subject state on every failed
-      // authentication transition; a later explicit verification can restore it.
-      Effect.onError(() => lifetime.replaceSubject(null)),
-    ),
-  );
+  return yield* lifetime.completeAuthentication(route, input, subject, {
+    onTransition: reactivity.invalidate(reactivityKeys),
+  });
 });
 
 /** Compose protocol operations and device effects in Atom, leaving rendering
@@ -174,7 +160,9 @@ export const workflow =
               subject,
             ) =>
               current.pipe(
-                Effect.andThen(completeAuthentication(route, value, subject)),
+                Effect.andThen(
+                  completeAuthentication(route, value, subject, options.reactivityKeys),
+                ),
                 Effect.provideService(AuthAtomLifetime, lifetime),
               );
 

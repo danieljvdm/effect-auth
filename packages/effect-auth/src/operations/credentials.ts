@@ -47,6 +47,8 @@ export interface AuthOperationResult<A> {
 
 export interface AuthResolvedCall {
   readonly invocation: AuthInvocation;
+  /** Private incoming credentials for this request or native workflow only. */
+  readonly credentials: Readonly<Partial<Record<CredentialSlot, Redacted.Redacted<string>>>>;
   readonly credentialCommandSink: AuthCredentialCommandSink;
   readonly revealCommandCollector?: AuthRevealCommandCollector;
 }

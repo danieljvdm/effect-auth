@@ -1,6 +1,6 @@
 import { Effect, Layer, Schema } from "effect";
-import type { Sessions } from "effect-auth";
-import { Auth, Password, Passkey, PhoneOtp } from "effect-auth";
+import { Auth, Password, Passkey, PhoneOtp, Sessions } from "effect-auth";
+import * as AuthHttp from "effect-auth/Http";
 import type { RequestBindingConfiguration } from "effect-auth/Operations";
 import type { ProofKeyring } from "effect-auth/Proofs";
 
@@ -21,65 +21,45 @@ export const makeApplicationAuth = (configuration: {
   };
   readonly phoneKeys: ProofKeyring;
   readonly requestBinding: RequestBindingConfiguration;
-  readonly sessions: Sessions.SessionPolicy;
+  readonly sessions: Sessions.SessionOptions;
+  readonly origin: string;
 }) => {
-  class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
+  const AppAuth = Auth.make("app/Auth", {
     claims: AccountClaims,
+    sessions: Sessions.stateful(configuration.sessions),
     strategies: {
       password: Password.make(),
       passkey: Passkey.make({ relyingParty: configuration.relyingParty }),
       phone: PhoneOtp.make({ template: "sign-in-code", keys: configuration.phoneKeys }),
     },
     defaultStrategy: "password",
-  }) {}
+  });
 
   const AuthLive = AppAuth.layer.pipe(
-    Layer.provide(AppAuth.sessions.layer(configuration.sessions)),
     Layer.provide(Auth.RequestBindingConfig.layer(configuration.requestBinding)),
   );
 
-  // Run these effects in request handlers. The host supplies Auth.AuthRequest and
-  // delivers its credential commands to cookies or the native credential store.
-  const signInWithPassword = Effect.fn("app.signInWithPassword")(function* (
-    email: string,
-    password: string,
-  ) {
-    const auth = yield* AppAuth;
+  const http = AuthHttp.make(AppAuth, { origin: configuration.origin });
 
-    return yield* auth.signIn({ email, password });
+  const AuthRoutes = http.routes();
+
+  // Application code contains its own projection; auth owns request and cookie mechanics.
+  const currentMember = Effect.fn("app.currentMember")(function* () {
+    const auth = yield* AppAuth;
+    const session = yield* auth.requireSession();
+
+    return { subjectId: session.subjectId, name: session.claims.displayName };
   });
 
-  const requestPhoneCode = Effect.fn("app.requestPhoneCode")(function* (phoneNumber: string) {
-    const auth = yield* AppAuth;
-
-    return yield* auth.signIn("phone", { phoneNumber });
-  });
-
-  const beginPasskey = Effect.fn("app.beginPasskey")(function* (flowId: string, commandId: string) {
-    const auth = yield* AppAuth;
-
-    return yield* auth.signIn("passkey", { flowId, commandId, profileId: "default" });
-  });
-
-  const completePasskey = Effect.fn("app.completePasskey")(function* (
-    input: typeof Passkey.PasskeyComplete.Encoded,
-  ) {
-    const auth = yield* AppAuth;
-
-    return yield* auth.completeSignIn("passkey", input);
-  });
-
-  const completePhone = Effect.fn("app.completePhone")(function* (
-    input: typeof PhoneOtp.PhoneOtpComplete.Encoded,
-  ) {
-    const auth = yield* AppAuth;
-
-    return yield* auth.completeSignIn("phone", input);
-  });
+  // In any handler covered by http.middleware:
+  // const auth = yield* AppAuth;
+  // yield* auth.signIn({ email, password });
+  // yield* auth.signIn("phone", { phoneNumber });
+  // yield* auth.signOut();
 
   // Application composition:
   // const AuthDependenciesLive = Layer.mergeAll(PersistenceLive, AccountsLive, SmsLive);
-  // const AppLive = HttpLive.pipe(
+  // const AppLive = AuthRoutes.pipe(
   //   Layer.provide(AuthLive.pipe(Layer.provide(AuthDependenciesLive))),
   // );
   // AccountsLive implements AppAuth.strategies.password.ClaimsForPassword,
@@ -89,10 +69,8 @@ export const makeApplicationAuth = (configuration: {
   return {
     AppAuth,
     AuthLive,
-    signInWithPassword,
-    requestPhoneCode,
-    beginPasskey,
-    completePasskey,
-    completePhone,
+    http,
+    AuthRoutes,
+    currentMember,
   };
 };

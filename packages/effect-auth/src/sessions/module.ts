@@ -29,7 +29,6 @@ import {
 } from "../operations/context";
 import { type AuthOperationResult } from "../operations/credentials";
 import { TokenDigest } from "../Schema";
-import { makeSessionContract } from "../SessionContract";
 import {
   assessAuthentication,
   combineAuthenticationEvidence,
@@ -37,6 +36,7 @@ import {
   snapshotSessionAuthenticationProvenance,
 } from "./assurance";
 import { AuthenticationAuthority } from "./AuthenticationAuthority";
+import { makeSessionContract } from "./contract";
 import { makeSessionSecrets, makeSessionSigningCodec, type SessionSigningKeyring } from "./crypto";
 import type { SessionError } from "./errors";
 import {
@@ -1849,6 +1849,29 @@ export const makeSessionModule = <
     }),
   );
 
+  /** Verification, renewal and sign-out need no authentication-completion authority. */
+  const sessionHandlersLayer = Layer.mergeAll(
+    Verify.handlerLayer(
+      Effect.fn("Session.Verify")(function* (input) {
+        return yield* (yield* SessionStrategy).verify(input.credential);
+      }),
+    ),
+    Renew.credentialHandlerLayer(
+      Effect.fn("Session.Renew")(function* (input) {
+        yield* checkNoAmbientCommit();
+
+        return yield* readCommitted(yield* (yield* SessionStrategy).prepareRenew(input.credential));
+      }),
+    ),
+    SignOut.credentialHandlerLayer(
+      Effect.fn("Session.SignOut")(function* (input) {
+        yield* checkNoAmbientCommit();
+
+        return yield* (yield* SessionStrategy).signOut(input.credential);
+      }),
+    ),
+  );
+
   const handlersLayer = (management: AssuranceRequirement) => {
     management = Object.freeze({
       ...management,
@@ -1883,27 +1906,7 @@ export const makeSessionModule = <
           );
         }),
       ),
-      Verify.handlerLayer(
-        Effect.fn("Session.Verify")(function* (input) {
-          return yield* (yield* SessionStrategy).verify(input.credential);
-        }),
-      ),
-      Renew.credentialHandlerLayer(
-        Effect.fn("Session.Renew")(function* (input) {
-          yield* checkNoAmbientCommit();
-
-          return yield* readCommitted(
-            yield* (yield* SessionStrategy).prepareRenew(input.credential),
-          );
-        }),
-      ),
-      SignOut.credentialHandlerLayer(
-        Effect.fn("Session.SignOut")(function* (input) {
-          yield* checkNoAmbientCommit();
-
-          return yield* (yield* SessionStrategy).signOut(input.credential);
-        }),
-      ),
+      sessionHandlersLayer,
       List.handlerLayer(
         Effect.fn("Session.List")(function* (input, context) {
           const caller = yield* requireAuthenticated(context);
@@ -1980,6 +1983,7 @@ export const makeSessionModule = <
     stateAssistedLayer,
     completionLayer,
     capabilitiesHandlerLayer,
+    sessionHandlersLayer,
     handlersLayer,
     operations,
     group,

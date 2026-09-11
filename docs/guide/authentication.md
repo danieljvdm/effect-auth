@@ -4,9 +4,329 @@ Authentication workflows for Effect applications. The package owns
 security-sensitive sign-in, session, and OAuth behavior; applications own
 identity and persistence adapters.
 
-Auth resources live in the caller's Scope.
-Start with [application composition](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/getting-started.ts) or the runnable
-[password example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/password-methods.ts).
+Auth resources live in the caller's Scope. Define a shared contract containing
+claims and the actions your application exposes. This module is safe to import
+in the browser; implementation Layers and keys belong in the server module.
+
+```ts
+import { Schema } from "effect";
+import * as AuthContract from "effect-auth/AuthContract";
+
+export const AuthApi = AuthContract.make("app/Auth", {
+  claims: Schema.Struct({ displayName: Schema.String }),
+  actions: (sessions) => ({ signIn: AuthContract.passwordSignIn(sessions) }),
+});
+```
+
+The contract includes four session actions: `getSession`, `requireSession`,
+`signOut`, and `renewSession`. Its `actions` callback selects additional actions;
+installing a strategy does not expose all of that strategy's methods. See the
+[shared contract example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-contract.ts).
+
+Bind the contract to a yieldable server service, then mount its declared actions:
+
+```ts
+import { Effect, Layer } from "effect";
+import { Auth, Password, Sessions } from "effect-auth";
+import * as AuthHttp from "effect-auth/Http";
+
+import { AuthApi } from "./auth-contract";
+
+export const AppAuth = Auth.make(AuthApi, {
+  sessions: Sessions.stateful({ idleTimeout: "7 days", maxAge: "30 days" }),
+  strategies: { password: Password.make() },
+  defaultStrategy: "password",
+});
+
+const http = AuthHttp.make(AppAuth, { origin: "https://app.example.com" });
+
+// Supply application-owned stores, account authority, and other required services.
+const AuthLive = AppAuth.layer.pipe(Layer.provide(ApplicationServicesLive));
+const Routes = Layer.mergeAll(http.routes(), ApplicationRoutes.pipe(http.middleware)).pipe(
+  Layer.provide(AuthLive),
+);
+```
+
+`http.routes()` mounts the shared action table with its request handling. Apply
+`http.middleware` to application routes that need session context. It accepts
+ordinary form, multipart, and JSON endpoints without imposing auth's payload
+format. Within those routes, call the service directly:
+
+```ts
+const currentMember = Effect.fn("app.currentMember")(function* () {
+  const auth = yield* AppAuth;
+  const session = yield* auth.getSession();
+
+  return session?.claims.displayName ?? null;
+});
+```
+
+These are local Effect calls. `AuthRequest` remains a requirement in `R` and is
+resolved for each execution; constructing the service does not capture a request.
+The [server example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-server.ts)
+shows this boundary, while the runnable
+[password example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/password-methods.ts)
+supplies a complete consumer implementation.
+
+`getSession()` returns `null` for missing or invalid credentials. Availability
+failures, defects, and interruption remain failures; they never become anonymous
+successes. `requireSession()` fails with `AuthenticationRequired` when anonymous.
+Session claims remain the application's exact decoded type. Application profile
+lookups and response projections belong to the application.
+
+`signOut()` reads the incoming credential without first verifying it. Its result
+reports `revoked`, `already-invalid`, `client-only`, or `SessionSignOutUnavailable`;
+local clearing does not claim successful server revocation. `renewSession()` is
+explicit: session reads never silently rotate credentials. Outside a request,
+`verifySession(redactedCredential)` verifies a supplied credential without cookie
+or delivery requirements.
+
+An existing `HttpApi` can include the auth group in its shared contract and OpenAPI:
+
+```ts
+// Shared API module
+const Api = HttpApi.make("app").add(ExistingGroup, AuthContract.httpGroup(AuthApi));
+
+// Server module
+const Routes = HttpApiBuilder.layer(Api, { openapiPath: "/openapi.json" }).pipe(
+  Layer.provide(http.handlers(Api)),
+  Layer.provide(ExistingHandlers),
+  Layer.provide(AuthLive),
+);
+```
+
+Both mounting forms use the same handlers and bounded operation transport.
+The group defaults to `auth`; pass matching `{ name: "account" }` options to
+`httpGroup` and `handlers` to rename it. Group middleware and annotations compose
+normally and their service requirements remain visible. Configure auth paths in
+the `basePath` option on `AuthContract.make`, rather than prefixing or replacing
+the generated endpoints after construction. The handler checks that the mounted
+group still describes the exact shared contract.
+
+The same contract gives browser code a named HTTP client, usable without React:
+
+```ts
+import { Effect } from "effect";
+import * as Client from "effect-auth/Client";
+
+import { AuthApi } from "./auth-contract";
+
+const AppClient = Client.make(AuthApi, { baseUrl: "https://app.example.com" });
+
+const currentMember = Effect.gen(function* () {
+  const client = yield* AppClient;
+  const session = yield* client.auth.getSession();
+
+  return session?.claims.displayName ?? null;
+});
+```
+
+Calls such as `client.auth.signIn({ email, password })` and
+`client.auth.signOut()` also return Effects. The client supplies credentials and
+CSRF transport settings; application code does not construct request headers.
+Each call makes one attempt, with typed errors and schema decoding requirements.
+
+Define the client service and its atoms outside the UI. Both constructors are
+inert; the application registry owns acquisition and finalization:
+
+```ts
+import * as AuthAtom from "effect-auth/Atom";
+import * as Client from "effect-auth/Client";
+
+export const AppClient = Client.make(AuthApi, {
+  baseUrl: "https://app.example.com",
+});
+export const auth = AuthAtom.make(AppClient);
+```
+
+`Client.make` declares a yieldable service, matching `Auth.make`. Provide
+`AppClient.layer` at an Effect program boundary, or yield `AppClient.make` inside
+a Scope for direct construction. Methods keep their codec requirements visible.
+`AuthAtom.make` supplies that service to an Atom runtime and generates importable
+queries and mutations; `auth.session` aliases `auth.getSession`.
+
+```ts
+const currentMember = Effect.gen(function* () {
+  const client = yield* AppClient;
+  const session = yield* client.auth.getSession();
+  return session?.claims.displayName ?? null;
+});
+
+export const memberName = auth.runtime.atom(currentMember);
+```
+
+These effects and the generated atoms use the same client instance. Direct calls
+through a separately provided `AppClient.layer` acquire a separate instance unless
+the host deliberately shares the Layer memo map. Pass a `services` Layer to
+`AuthAtom.make` when the contract's response codecs need services; this option is
+required by its types when necessary.
+Its optional `layer` replaces the configured client Layer for tests or a custom
+implementation while retaining the same service and action types.
+
+React uses the standard `@effect/atom-react` adapter and its ordinary application
+`RegistryProvider`. Effect Auth has no React provider or hooks:
+
+```tsx
+import { useAtomValue, useAtomSet } from "@effect/atom-react";
+import { auth } from "./auth-client";
+
+function Account() {
+  const session = useAtomValue(auth.session);
+  const signOut = useAtomSet(auth.signOut);
+  return <AccountView session={session} onSignOut={() => signOut(undefined)} />;
+}
+```
+
+Queries expose loading, success and failure through `AsyncResult`, including
+client setup errors. Keep multi-step work in Effects and workflow atoms. React
+renders and dispatches; promise-mode handlers return the dispatch promise without
+`.then` chains. See the [client example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-client.ts)
+and [React example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-react.ts).
+
+Auth queries refresh automatically after mutations. Declare extra reactivity keys
+only for application dependencies, and use the same runtime factory as the
+queries that subscribe to those keys:
+
+```ts
+const appRuntime = Atom.context();
+const auth = AuthAtom.make(AppClient, {
+  runtime: appRuntime,
+  reactivityKeys: { signIn: ["projects"], signOut: ["projects"] },
+});
+```
+
+The default factory is `Atom.runtime`. It owns a separate memo map per registry;
+an explicitly shared memo map can connect multiple runtimes. Account transitions
+settle invalidation before interruption can escape from account-scoped work.
+Private reveals remain in their finite collector, outside query state.
+
+`auth.runtime` owns account-scoped queries and custom workflows. Internally, the
+old account registry is disposed before the replacement is published, clearing
+cached values and cancelling old work. State read or written inside these
+workflows belongs to that account registry. Ordinary application atoms outside
+this runtime retain their normal application lifetime; reactivity keys refresh
+them but do not make them account-scoped.
+
+Named auth mutations keep their own admitted sign-in or sign-out alive until its
+public result settles. Dispatch a mutation explicitly to execute it; refreshing
+its result view does not resend credentials. An unrelated account change interrupts pending mutations
+and clears previous results. Custom account-scoped workflows retire on account
+replacement, including when they complete authentication; awaiting callers receive
+interruption rather than waiting indefinitely. Use an application-owned workflow
+lifetime for work intentionally spanning multiple accounts.
+
+For SSR, the default atoms render `Initial` without fetching. For session-aware
+rendering, define request-local atoms with the encoded local `auth.getSession()`
+result as `initialSession`. Acquire `auth.runtime` in a request-owned registry
+before rendering to decode the seed and build its services, then supply that
+registry through the standard Atom adapter. Serialize only the public session
+through the framework. Browser hydration uses a separate registry and binding
+with the same display seed; close each registry with its host Scope. Never share
+a server registry, client instance, or request-bearing memo map across requests.
+The [SSR example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-ssr.ts)
+shows rendering, hydration, and unmount finalizers without auth-specific React APIs.
+
+The initial session is schema-decoded display data, not client authority. Runtime
+acquisition does not fetch the session. Browser query reads verify the live cookie;
+a result, failure, or account transition permanently drops the seed. It cannot
+reappear after sign-out. Do not apply generic late hydration updates to auth atoms.
+
+`AuthContract.action` defines an additional action's input, success, and error
+schemas, query or mutation mode, and selected implementation method/strategy.
+`AuthContract.fromOperation` reuses a pure public operation contract.
+`AuthContract.passwordSignIn` is the provided password sign-in helper; other
+methods require explicit action entries. Both local and HTTP calls run the full
+declared input, result, and error validation, preserving schema transformations
+and typed failures. `requestFields` maps private implementation inputs to
+request credential slots. `fromOperation` removes these fields from the public
+payload schema; local and HTTP callers cannot supply them, and the server
+injects them from `AuthRequest` at execution time.
+
+`Sessions.stateful`, `Sessions.stateless`, and `Sessions.stateAssisted` select the
+backend. Signed modes require an explicit `keys` keyring. Defaults are a seven-day
+idle timeout (bounded by maximum age), thirty-day maximum age, renewal after one
+day (bounded by half the idle timeout), generation 1, and a 4096-byte token limit.
+Issuer and audience default to the stable session namespace. Override these
+options when retaining an existing installation. After reducing maximum age,
+retain `maximumIssuedAge` through the lifetime of previously issued tokens.
+Pure stateless sign-out only clears the current client: existing tokens retain
+their original absolute expiry.
+
+For local composition without additional shared actions, keep the identifier form:
+
+```ts
+const LocalAuth = Auth.make("app/LocalAuth", {
+  claims: Schema.Struct({ displayName: Schema.String }),
+  sessions: Sessions.stateful(),
+});
+```
+
+A session-only service needs its selected session backend; it does not acquire
+authentication or provisioning authority. The
+[application composition example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/getting-started.ts)
+uses this form.
+
+Add authentication methods with `strategies` and optionally `defaultStrategy`.
+Authentication methods share the selected session implementation and default
+completion authority. Other method bundles do not acquire completion authority;
+custom bundles request it with `Auth.makeStrategy(methods, layer, { completion: true })`. Applications needing custom completion, pending factors,
+or runtime-selected session Layers omit `sessions` and supply those services
+through ordinary Layers. `Auth.Service<Self>()` is the class form of the same
+service. `Auth.make` creates the service definition synchronously; `AppAuth.layer`
+provides an instance, while `yield* AppAuth.make` constructs one directly in the
+caller's Scope.
+
+No-input query actions use GET, including `/auth/getSession` and
+`/auth/requireSession`. Mutations use POST, including `/auth/signOut` and
+`/auth/renewSession`. Queries with payloads stay POST so arbitrary inputs and
+credentials do not enter URLs. The contract owns paths through `basePath`, which
+defaults to `/auth`; server and named client use the same descriptors.
+
+POST auth actions require the configured Origin, JSON content type, and
+`x-effect-auth-csrf: 1` by default. GET actions have no body or CSRF header and
+reject an explicitly untrusted Origin. `Client.make` handles the operation
+request/response envelopes and transport settings, while the browser manages
+Origin and cookies. The native `HttpApi` group documents those exact envelopes;
+a plain `HttpApiClient` does not replace the named client's credential admission,
+private reveal handling, or account lifetime coordination.
+
+Cookie defaults are
+`Secure`, `HttpOnly`, `SameSite=Lax`, path `/`, and the `__Host-effect-auth-`
+prefix. Override `cookie.name` for the session slot,
+`cookie.prefix` for all slots, or `csrf` for a different header/value. Plain HTTP
+development requires an explicit `cookie.secure: false` override. Duplicate
+credential cookies and unauthorized origins are rejected. Session responses are
+not cacheable. Pass matching `csrf` settings to `Client.make` when overriding them.
+
+`http.middleware` wraps raw HttpRouter or HttpApi route Layers. It installs fresh
+request credentials and private collectors for each request, and delivers
+commands as cookies on the completed response. It does not make every endpoint
+require authentication; protected application handlers call `requireSession()`.
+Named auth mutations validate Origin and CSRF before calling their implementation,
+even when called locally from an application route. Raw strategy methods are
+conservatively treated as mutations; declared queries supply their read mode.
+For custom credential-producing workflows, use `http.protect(effect)` inside the
+request boundary. It validates mutation policy before running the workflow and
+providing credential collectors, while leaving its body format to the application.
+Unprotected raw credential operations cannot acquire the collectors. The host
+still owns ordinary application mutation policy, including webhook validation.
+For declarative HttpApi protection, define `makeSessionHttpContract` from the
+pure `SessionContract` module beside the shared API. Add its `RequireSession`
+middleware to protected endpoints or groups, and yield its typed `CurrentSession`
+in handlers. Supply `http.securityLayer(contract)` when building the API, then
+apply `http.middleware` to the route Layer. The security contract declares 401
+for absent/invalid sessions and 503 for unavailable verification; its cookie name
+must match the adapter. See the small [shared session contract](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/session-contract.ts)
+and [session HTTP example](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/session-http.ts).
+
+`http.withRequest` wraps a custom Effect returning an HttpServerResponse.
+For lower-level transport composition, `http.operationLayer` supplies the same
+browser policy and caller resolution to existing `OperationHttpServer` contracts.
+Those contracts continue to own private payload injection and explicitly selected
+reveals. `OperationHttpClient` and the explicit `AuthAtom.query`, `mutation`, and
+`workflow` helpers remain available; their authentication completion uses the same
+transition boundary as the generated atoms. Custom response workflows must encode
+their expected failures before leaving the request wrapper.
 
 `Password.make`, `Passkey.make`, `PhoneOtp.make`, and `Sessions.make` are available
 through named root namespaces or their explicit module subpaths. Selected strategies
@@ -28,9 +348,9 @@ The root import does not load their peer dependencies. Internal code imports own
 modules directly; Oxlint checks public indexes and rejects internal barrels and
 package self-imports.
 
-The host supplies `AuthRequest` for each request or native workflow, including
-trusted caller identity and private credential delivery. Keep it outside shared
-Layers. Public results never include credential commands. Password sign-in
+The HTTP adapter supplies `AuthRequest`. A custom or native host provides its
+trusted invocation, private incoming `credentials` by slot, and credential delivery
+sink for each workflow. Keep this context outside shared Layers. Public results never include credential commands. Password sign-in
 creates a fresh flow on each execution; commands whose IDs support replay still
 require the caller's original ID. No call automatically retries a mutation.
 
@@ -634,8 +954,8 @@ use the same contracts as its HTTP server.
 applications explicitly configure cookies, origins, CSRF, callbacks and native
 exposure. `OperationHttpClient` performs one attempt per call. Ambiguous writes
 require a fresh authoritative lookup or a new flow, never an automatic mutation
-retry. Pure `SessionContract`, `PasskeyContract` and `TotpContract` imports keep
-server implementations out of browser bundles.
+retry. Pure `AuthContract`, `SessionContract`, `PasskeyContract` and `TotpContract`
+imports keep server implementations out of browser bundles.
 
 Public modules support both root namespaces and direct subpaths:
 
