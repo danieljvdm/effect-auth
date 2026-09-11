@@ -1,17 +1,13 @@
 ---
-description: Configure GitHub OAuth, redirect to sign in, and complete the callback.
+description: Connect OAuth providers to your auth service and handle sign-in callbacks.
 ---
 
-# OAuth
+# OAuth setup
 
-Configure a provider, start sign-in, and exchange the callback for an application
-session. This example uses a GitHub OAuth App.
+Set up the auth service once, then add [GitHub](./github), [Google](./google), or
+[another OAuth/OIDC provider](#other-providers).
 
-The calls below use the local service inside existing Effects. A browser client
-needs explicitly declared [shared actions](./http-and-client#expose-another-method),
-including a request-field mapping for the private request binder.
-
-## Enable OAuth sign-in
+## Enable sign-in
 
 ```ts [auth.ts]
 import { Schema } from "effect";
@@ -21,7 +17,7 @@ export const AppAuth = Auth.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
   sessions: Sessions.stateful(),
   strategies: {
-    github: OAuth.make({
+    social: OAuth.make({
       policy: {
         generation: 1,
         lifetimeMillis: 5 * 60_000,
@@ -31,131 +27,49 @@ export const AppAuth = Auth.make("app/Auth", {
       },
     }),
   },
-  defaultStrategy: "github",
+  defaultStrategy: "social",
 });
 ```
 
-`OAuth.make` signs in an existing linked identity. For account creation, use
-`OAuth.makeRegistration` with your registration schema and provisioning authority.
+`OAuth.make` signs in accounts with an existing provider link. To create accounts
+during sign-in, use `OAuth.makeRegistration` with your registration schema and
+account provisioning service.
 
-## Configure the GitHub provider
+## Supply the services
 
-```ts [github-provider.ts]
-import { Config, Effect, Layer } from "effect";
-import { gitHubOAuthAppProtocolLayer } from "@yielded/auth/GitHub";
-import { OAuthCallbackId, OAuthRedirectUri } from "@yielded/auth/OAuth";
+Provide your provider Layer, transaction encryption, and allowed return routes:
 
-export const GitHubProtocolLive = Layer.unwrap(
-  Effect.gen(function* () {
-    const clientId = yield* Config.string("GITHUB_CLIENT_ID");
-    const clientSecret = yield* Config.redacted("GITHUB_CLIENT_SECRET");
+```ts [oauth-live.ts]
+import { Layer } from "effect";
+import { OAuthReturnTargets, OAuthTransactionProtector } from "@yielded/auth/OAuth";
 
-    return gitHubOAuthAppProtocolLayer({
-      registrations: [
-        {
-          configurationGeneration: 1,
-          issuance: "active",
-          clientId,
-          clientSecret,
-          callbacks: [
-            {
-              callbackId: OAuthCallbackId.make("github"),
-              redirectUri: OAuthRedirectUri.make("https://app.example.com/auth/github/callback"),
-            },
-          ],
-        },
-      ],
-      timeoutSeconds: 10,
-    });
-  }),
+import { AppAuth } from "./auth";
+import { transactionKeys } from "./auth-config";
+import { GitHubLive } from "./github";
+
+export const OAuthLive = AppAuth.layer.pipe(
+  Layer.provide(GitHubLive),
+  Layer.provide(OAuthTransactionProtector.xchacha20poly1305(transactionKeys)),
+  Layer.provide(OAuthReturnTargets.exactRoutes(["/account"])),
 );
 ```
 
-Register that exact callback URL in your GitHub OAuth App. The adapter requires
-`openid-client`. Other OAuth/OIDC providers use `@yielded/auth/OpenIdClient`.
+Use a dedicated encryption keyring. Supply the remaining account lookup, claims,
+[OAuth persistence](../reference/adapters#oauth), session, and
+`Auth.RequestBindingConfig` Layers from your application.
 
-GitHub's callback includes an `iss` parameter identifying
-`https://github.com/login/oauth`. Preserve it as `response.issuer`: the adapter
-requires an exact match before exchanging the code. Do not remove or replace a
-callback issuer to bypass validation. This is GitHub's
-[OAuth issuer](https://docs.github.com/en/apps/github-authentication-discovery-endpoints),
-not the issuer for GitHub Actions tokens.
-
-The previous adapter used `https://github.com` and rejected issuer-bearing
-callbacks. After upgrading, start fresh sign-in attempts; pending flows captured
-with the old issuer cannot complete. Existing GitHub login bindings and connected
-grants using the old issuer are not reused or linked automatically. Revoke old
-connected grants before upgrading, then register or explicitly link the corrected
-GitHub identity and reconnect any required grants. Do not rewrite stored issuer
-values: they participate in identity keys and protected transaction context.
-Other providers, local subjects, and application data do not need to reset.
-
-## Combine OAuth providers
-
-Use one provider list: separate protocol Layers replace the same `OAuthProtocol`
-service. `gitHubOAuthAppProvider` preserves GitHub's response handling within it.
-
-```ts [providers.ts]
-import { gitHubOAuthAppProvider } from "@yielded/auth/GitHub";
-import { openIdClientOAuthProtocolLayer } from "@yielded/auth/OpenIdClient";
-
-import { githubRegistration, googleOidcRegistration } from "./auth-config";
-
-export const ProvidersLive = openIdClientOAuthProtocolLayer({
-  providers: [gitHubOAuthAppProvider(githubRegistration), googleOidcRegistration],
-  timeoutSeconds: 10,
-});
-```
-
-The [server example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-server.ts)
-shows both registration shapes; `google: true` enables optional Google OIDC.
-Replace its example origin and configure server-only credentials and exact callbacks.
-GitHub uses [`read:user`](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)
-without repository access; Google uses [`openid`](https://developers.google.com/identity/openid-connect/openid-connect)
-without mailbox access. Retain retired configurations until their outstanding flows expire.
-
-## Email OTP and GitHub in one application
-
-Compose `Email.makeCode`, `Email.makeRegistration`, and `OAuth.makeRegistration`
-under one `Auth.make` with `Sessions.stateful()`. The
-[contract](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-contract.ts),
-[server](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-server.ts), and
-[client](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-client.ts)
-share sessions, HTTP cookies, and Atom workflows. Supply durable stores, provisioning,
-keyrings, and [email delivery](./codes#supply-the-services). Google is optional.
-
-`RegistrationRequired` leads to `auth.register` with the original flow ID, returned
-reference, fresh command ID, and signup data. After `RegistrationAccepted`, start a
-new sign-in; resolve `ProvisioningPending` through your application. Provision stable
-local subjects bound to the provider/issuer/subject tuple, not provider email.
-
-Keep login and callback GETs public and inert. Private routes must call
-`auth.requireSession()`; `http.middleware` only supplies request context.
-
-## Redirect to GitHub
-
-<!-- prettier-ignore -->
-```ts
-const auth = yield* AppAuth;
-const started = yield* auth.signIn({
-  flowId,
-  commandId,
-  provider: "github",
-  callbackId: "github",
-  returnTarget: "/account",
-});
-```
-
-Use `Redacted.value(started.authorizationUrl)` at the redirect boundary, with
-`Redacted` imported from `effect`. The URL is redacted because it contains OAuth
-state. Retain the public flow ID across navigation; deliver the private request
-binder through the HTTP cookie boundary.
+For browser access, declare `signIn` and `completeSignIn` as shared actions and
+mount them with [the HTTP adapter](./http-and-client#expose-another-method).
+Map `requestBinding` to `"request-binding"` on completion so the server reads the
+private binding from its cookie. The [shared contract](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-contract.ts)
+and [server example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-server.ts)
+show the full wiring.
 
 ## Complete the callback
 
-Here `requestBinding` is the original private server credential. A shared action
-uses `requestFields: { requestBinding: "request-binding" }` so callers supply only
-the public callback fields.
+After the provider redirects back, submit its response and the saved flow ID to
+`completeSignIn`. This is the local server call; shared actions inject
+`requestBinding` automatically.
 
 <!-- prettier-ignore -->
 ```ts
@@ -169,95 +83,123 @@ const result = yield* auth.completeSignIn({
 });
 ```
 
-```text
-signIn → retain flow ID → redirect
-  → GitHub callback + original binder
-  → verify state / PKCE / provider identity
-  → resolve your local account → issue session
+Use the provider and callback ID that started the flow. `requestBinding` is the
+original private credential, and `issuer` comes from the callback's `iss` parameter.
+GitHub requires `https://github.com/login/oauth`; never rewrite the returned issuer.
+Handle provider denial with the `Error` response variant.
+
+The callback GET serves a public page. That page completes sign-in through a
+same-origin protected POST; the GET itself must not exchange the code. Keep callback
+values out of logs and clear them from the page URL after reading them. The
+[browser example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-client.ts)
+handles parsing and dispatch. After an uncertain exchange, start a fresh sign-in
+instead of retrying the code.
+
+## Combine providers
+
+Use one `OpenIdClient.layer` for all hosts. Separate provider Layers would replace
+the same service.
+
+```ts [providers.ts]
+import * as GitHub from "@yielded/auth/GitHub";
+import * as OpenIdClient from "@yielded/auth/OpenIdClient";
+
+import { github, google } from "./auth-config";
+
+export const ProvidersLive = OpenIdClient.layer({
+  providers: [GitHub.provider(github), google],
+});
 ```
 
-Handle provider denial through the `Error` callback variant. Do not retry an
-exchange after an unknown outcome. Start a new authorization flow instead.
+Here `github` contains the options passed to `GitHub.layer`, and `google` contains
+the provider entry passed to `OpenIdClient.layer` on their setup pages.
 
-The provider redirect is a GET navigation, but completion is an auth mutation.
-With the standard HTTP adapter, the callback page submits the returned values
-through a same-origin protected POST from the initiating browser. A raw callback
-GET cannot call `completeSignIn` under `http.middleware` and bypass its Origin/CSRF
-checks. Keep callback values out of logs and clear them from the page URL after
-capturing them. Custom callback hosts must own an equivalent request boundary.
+## Other providers
 
-## Provide encryption and return routes
+Use `OpenIdClient.layer` for other OAuth and OpenID Connect hosts. The
+[Google example](./google#configure-the-provider) shows an OIDC entry: set your
+provider key, issuer, credentials, and callback URL. Discovery verifies the host's
+capabilities.
 
-```ts [oauth-security.ts]
-import { Layer } from "effect";
-import { OAuthReturnTargets, OAuthTransactionProtector } from "@yielded/auth/OAuth";
+For plain OAuth, set `protocol: "oauth"` and provide `authorizationEndpoint`,
+`tokenEndpoint`, `identitySource.url`, and `identitySource.decodeIdentity`.
+The decoder receives the authenticated profile response and returns an Effect
+containing the provider's stable `subject` and optional display profile.
+Set any required `scopes` explicitly.
 
-import { transactionKeys } from "./auth-config";
+### Defaults and overrides
 
-export const OAuthSecurityLive = Layer.mergeAll(
-  OAuthTransactionProtector.xchacha20poly1305(transactionKeys),
-  OAuthReturnTargets.exactRoutes(["/account"]),
-);
-```
+| Setting                             | Default                        |
+| ----------------------------------- | ------------------------------ |
+| `callbackId`                        | Provider key, such as `github` |
+| `configurationGeneration`           | `1`                            |
+| `issuance`                          | `active`                       |
+| `timeoutSeconds`                    | `10` (allowed range: 1–30)     |
+| Generic `tokenEndpointAuthMethod`   | `client_secret_basic`          |
+| OIDC `scopes` / signature algorithm | `["openid"]` / RS256           |
+| Plain OAuth `scopes`                | `[]`                           |
 
-Use a dedicated secret keyring for transaction encryption. Provide this Layer,
-`GitHubProtocolLive`, OAuth persistence/identity lookup, claims, sessions, and
-`Auth.RequestBindingConfig` to your application.
+Use `callbacks` instead of `redirectUri` for several named destinations.
+Secrets must be redacted; load them with `Config.redacted` or wrap validated server
+configuration with `Redacted.make`.
 
-## Login accounts and API connections
+S256 PKCE and response issuer validation are required by default. Set
+`responseIssuerMode: "unsupported"` only for hosts without issuer responses;
+callback isolation checks still apply. Public clients use explicit
+`authentication: { method: "none", publicClient: true }` instead of `clientSecret`.
+Invalid settings fail Layer construction with `OpenIdClientConfigurationError`.
 
-| Task                                          | API                                           |
-| --------------------------------------------- | --------------------------------------------- |
-| Sign in through an existing provider identity | `OAuth.make`                                  |
-| Create a new local account                    | `OAuth.makeRegistration`                      |
-| Link or unlink a login method                 | `OAuth.makeAccounts`                          |
-| Store a grant for calling a provider API      | `OAuth.makeConnected` / `makeConnectedModule` |
+## Rotate configuration
+
+When credentials or protocol settings change, assign a new
+`configurationGeneration`. Retain the old entry with `issuance: "retired"` until
+its outstanding flows expire. Keep exactly one active generation per provider.
+
+Pass the entries in `GitHub.layer({ registrations: [...] })` or the
+`OpenIdClient.layer` provider list. The default generation `1` does not track
+credential changes automatically.
+
+## Accounts and API access
+
+| Task                                 | API                                           |
+| ------------------------------------ | --------------------------------------------- |
+| Sign in an existing account          | `OAuth.make`                                  |
+| Create an account                    | `OAuth.makeRegistration`                      |
+| Link or unlink a login method        | `OAuth.makeAccounts`                          |
+| Save a grant for provider API access | `OAuth.makeConnected` / `makeConnectedModule` |
 
 Linking requires an authenticated local account and explicit authorization.
-A matching provider email is not permission to merge accounts.
+Provider email alone is never permission to merge accounts.
 
-For a connected account, use `ConnectedAccess.withAccessToken` to keep the token
-inside the provider request:
+For API access, use `GitHub.layerConnected` or `OpenIdClientConnected.layer` with
+explicit permission profiles. Access tokens stay inside
+`ConnectedAccess.withAccessToken`; retain retired configurations while grants
+reference them. See the [GitHub API example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/github-oauth-app.ts)
+for profiles, token storage, refresh, and revocation. Never retry an uncertain refresh.
 
-```ts [read-profile.ts]
-import { Effect, Schema } from "effect";
-import { OAuthUnavailable, type OAuthGrantId } from "@yielded/auth/OAuth";
-import type { AuthInvocation } from "@yielded/auth/Operations";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
+### Email and social login
 
-import { connected, profile } from "./connected-account";
+The combined [contract](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-contract.ts),
+[server](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-server.ts), and
+[client](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-client.ts)
+share sessions across email, GitHub, and optional Google sign-in.
 
-const Profile = Schema.Struct({ login: Schema.String });
+On `RegistrationRequired`, submit signup data to `auth.register` with the original
+flow ID, returned reference, and a fresh command ID. Start a new sign-in after
+`RegistrationAccepted`; handle `ProvisioningPending` through your application.
+Bind accounts to the provider/issuer/subject identity. Protect private routes with
+`auth.requireSession()`; HTTP middleware only supplies request context.
 
-export const readProfile = Effect.fn("app.readGitHubProfile")(
-  function* (caller: AuthInvocation, grantId: typeof OAuthGrantId.Type) {
-    const access = yield* connected.ConnectedAccess;
-    const http = yield* HttpClient.HttpClient;
+<details>
+<summary>Upgrading from the previous GitHub issuer</summary>
 
-    return yield* access.withAccessToken(caller, { grantId, profileKey: profile.key }, (token) =>
-      http
-        .execute(
-          HttpClientRequest.get("https://api.github.com/user", {
-            headers: { Accept: "application/vnd.github+json", "User-Agent": "my-app" },
-          }).pipe(HttpClientRequest.bearerToken(token)),
-        )
-        .pipe(
-          Effect.flatMap((response) =>
-            response.status === 200
-              ? response.json.pipe(Effect.mapError(() => OAuthUnavailable.make({})))
-              : Effect.fail(OAuthUnavailable.make({})),
-          ),
-          Effect.flatMap(Schema.decodeUnknownEffect(Profile)),
-          Effect.timeout("10 seconds"),
-        ),
-    );
-  },
-  Effect.provide(FetchHttpClient.layer),
-  Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual", credentials: "omit" }),
-);
-```
+Older adapters used `https://github.com` instead of `https://github.com/login/oauth`.
+Start fresh sign-in attempts after upgrading. Pending flows with the old issuer
+cannot complete, and old GitHub login bindings are not reused or linked automatically.
+Register or explicitly link the corrected identity.
 
-`connected` and its permission `profile` are application configuration. The
-[GitHub connection composition](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/github-oauth-app.ts)
-shows their setup. Refresh, revocation, and access use share durable grant state;
-never return the token from the callback or retry uncertain refreshes.
+Revoke old connected grants before upgrading, then reconnect. Do not rewrite stored
+issuer values: they are part of identity keys and encrypted transaction context.
+Other providers, local subjects, and application data do not need a reset.
+
+</details>

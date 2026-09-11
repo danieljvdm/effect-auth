@@ -1,3 +1,5 @@
+export { layer, type Options, type Provider } from "./oauth/openid-client/connected/layer";
+
 export {
   type OpenIdClientAuthentication,
   OpenIdClientConfigurationError,

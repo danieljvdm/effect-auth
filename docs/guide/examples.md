@@ -16,7 +16,8 @@ database, and request handlers. Each composition uses the package's public API.
 | [Phone OTP](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/phone-sqlite-bun.ts)        | Phone authentication backed by SQLite on Bun. |
 | [Password hashing](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/password-hashing.ts) | Hashing policy and verification.              |
 
-The [GitHub OAuth composition](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/github-oauth-app.ts)
+Start with the [GitHub](./github) or [Google](./google) setup guide. The
+[GitHub OAuth composition](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/github-oauth-app.ts)
 shows provider and application wiring.
 
 ## Sessions and identity

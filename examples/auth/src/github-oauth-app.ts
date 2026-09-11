@@ -1,10 +1,5 @@
 import { Auth, OAuth } from "@yielded/auth";
-import {
-  gitHubOAuthAppConnectedProtocolLayer,
-  gitHubOAuthAppProtocolLayer,
-  gitHubOAuthAppProviderKey,
-  type GitHubOAuthAppGeneration,
-} from "@yielded/auth/GitHub";
+import * as GitHub from "@yielded/auth/GitHub";
 import {
   makeConnectedModule,
   OAuthConnectedProfile,
@@ -82,13 +77,13 @@ const claimsLayer = Layer.effect(
  * authority, pending-proof persistence and lifecycle hooks to the returned Layer.
  * Registration atomically provisions a new local subject; it never merges email. */
 export const githubSignInLayer = (input: {
-  readonly registration: GitHubOAuthAppGeneration;
+  readonly registration: GitHub.Registration;
   readonly bindingKeys: SessionSigningKeyring;
   readonly transactionKeys: OAuthTransactionKeyring;
   readonly sessionKeys: SessionSigningKeyring;
 }) => {
   const shared = Layer.mergeAll(
-    gitHubOAuthAppProtocolLayer({ registrations: [input.registration], timeoutSeconds: 10 }),
+    GitHub.layer(input.registration),
     Auth.RequestBindingConfig.layer({
       generation: 1,
       lifetimeMillis: 120_000,
@@ -156,7 +151,7 @@ const readUserProfile = Effect.fn("example.GitHub.readUserProfile")(
  * verifier. This has no session strategy, Claims resolver or login mutation.
  * Its sole sample capability is GET /user, requiring only read:user. */
 export const githubProfileConnection = (input: {
-  readonly registration: GitHubOAuthAppGeneration;
+  readonly registration: GitHub.Registration;
   readonly bindingKeys: SessionSigningKeyring;
   readonly transactionKeys: OAuthTransactionKeyring;
   readonly tokenKeys: OAuthTransactionKeyring;
@@ -165,7 +160,7 @@ export const githubProfileConnection = (input: {
     key: OAuthPermissionProfileKey.make("github-profile"),
     generation: 1,
     issuance: "active",
-    provider: gitHubOAuthAppProviderKey,
+    provider: GitHub.gitHubOAuthAppProviderKey,
     clientRegistrationId: input.registration.clientId,
     scopes: ["read:user"],
     resources: [],
@@ -186,10 +181,7 @@ export const githubProfileConnection = (input: {
   });
 
   const shared = Layer.mergeAll(
-    gitHubOAuthAppConnectedProtocolLayer({
-      registrations: [{ ...input.registration, profiles: [profile] }],
-      timeoutSeconds: 10,
-    }),
+    GitHub.layerConnected({ ...input.registration, profiles: [profile] }),
     connected.binding.signedLayer({
       generation: 1,
       lifetimeMillis: 120_000,
