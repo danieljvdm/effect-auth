@@ -33,6 +33,10 @@ jobs:
         startsWith(github.event.comment.body, '@effect-agent review')))
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     environment:
       # Configure required reviewers in repository settings before enabling
       # this workflow. Same-repository PRs and authorized comments need no gate.
@@ -46,23 +50,13 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
 
-      - name: Mint the Effect Agent GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
-        with:
-          app-id: ${{ secrets.EFFECT_AGENT_APP_ID }}
-          private-key: ${{ secrets.EFFECT_AGENT_APP_PRIVATE_KEY }}
-          permission-contents: read
-          permission-issues: write
-          permission-pull-requests: write
-
       - name: Review the pull request
         uses: danieljvdm/effect-agent/action@action-v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          github-token: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ github.token }}
           pull-request: ${{ github.event.pull_request.number || github.event.issue.number }}
-          review-author: effect-agent[bot]
+          review-author: github-actions[bot]
           mode: ${{ github.event_name == 'pull_request_target' && 'auto' || 'incremental' }}
           command: ${{ github.event_name == 'issue_comment' && github.event.comment.body || '' }}
           comment-id: ${{ github.event.comment.id || 0 }}

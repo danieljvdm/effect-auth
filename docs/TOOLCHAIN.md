@@ -91,11 +91,11 @@ CI runs static checks, tests, and builds in separate jobs with a required `ready
 fan-in on pull requests. Vite Task cache entries are reused only when their inputs
 match; Vitest's mutable result cache is disabled.
 
-Optional Effect Agent PR reviews require `PR_REVIEW_ENABLED=true`, the existing
-Effect Agent App credentials, and `OPENAI_API_KEY`. Before enabling them, configure
-the `pr-review-forks` environment with maintainer approval. Review runs execute
-trusted default-branch code and never execute PR-head code with secrets. The
-`pr-review` environment handles same-repository and authorized comment reviews.
+Effect Agent reviews use `GITHUB_TOKEN` and the repository secret `OPENAI_API_KEY`.
+Set `PR_REVIEW_ENABLED=true` after the workflow reaches `main`.
+The `pr-review-forks` environment requires maintainer
+approval; `pr-review` handles same-repository and authorized `@effect-agent review`
+comments. Both execute trusted default-branch code, never PR-head code.
 
 ## Documentation
 
