@@ -6,9 +6,10 @@ export default defineConfig({
   title: "Yielded Auth",
   description: "Composable authentication, sessions, and identity workflows for Effect.",
   lang: "en-US",
+  base: "/auth/",
   cleanUrls: true,
-  sitemap: { hostname: "https://effect-auth.com" },
-  head: [["link", { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }]],
+  sitemap: { hostname: "https://yielded.dev/auth/" },
+  head: [["link", { rel: "icon", type: "image/svg+xml", href: "/auth/favicon.svg" }]],
   srcExclude: ["TOOLCHAIN.md"],
   markdown: {
     theme: { light: { ...tokyoNightLight, type: "light" }, dark: "tokyo-night" },
