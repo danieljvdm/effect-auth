@@ -1,0 +1,459 @@
+import { generateKeyPairSync, sign } from "node:crypto";
+
+import { it } from "@effect/vitest";
+import { gitHubOAuthAppProvider, makeGitHubOAuthAppProtocol } from "@yielded/auth/GitHub";
+import {
+  OAuthCallbackId,
+  OAuthIssuer,
+  OAuthProviderKey,
+  OAuthRedirectUri,
+  type OAuthProtocol,
+  type OAuthProtocolPreparation,
+} from "@yielded/auth/OAuth";
+import {
+  makeOpenIdClientOAuthProtocol,
+  type OpenIdClientOidcProvider,
+} from "@yielded/auth/OpenIdClient";
+import { RequestBindingFlowId } from "@yielded/auth/Operations";
+import { DateTime, Deferred, Effect, Fiber, Redacted } from "effect";
+import type { CustomFetch } from "openid-client";
+import { describe, expect } from "vite-plus/test";
+
+import { expectTag } from "../../helpers/oauth";
+
+const keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const jwk = { ...keys.publicKey.export({ format: "jwk" }), kid: "test", alg: "RS256", use: "sig" };
+
+const jwt = (claims: Record<string, unknown>) => {
+  const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: "test" })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
+  const input = `${header}.${payload}`;
+
+  return `${input}.${sign("RSA-SHA256", Buffer.from(input), keys.privateKey).toString("base64url")}`;
+};
+
+const json = (body: unknown, status = 200) => Response.json(body, { status });
+const googleIssuer = OAuthIssuer.make("https://accounts.google.com");
+
+const github = (configurationGeneration = 1, issuance: "active" | "retired" = "active") =>
+  gitHubOAuthAppProvider({
+    configurationGeneration,
+    issuance,
+    clientId: `github-${configurationGeneration}`,
+    clientSecret: Redacted.make(`github-secret-${configurationGeneration}`),
+    callbacks: [
+      {
+        callbackId: OAuthCallbackId.make("github"),
+        redirectUri: OAuthRedirectUri.make("https://app.test/auth/github/callback"),
+      },
+    ],
+  });
+
+const google = (
+  configurationGeneration = 1,
+  issuance: "active" | "retired" = "active",
+): OpenIdClientOidcProvider => ({
+  provider: OAuthProviderKey.make("google"),
+  protocol: "oidc",
+  configurationGeneration,
+  issuance,
+  issuer: googleIssuer,
+  responseIssuerMode: "required",
+  clientId: `google-${configurationGeneration}`,
+  authentication: {
+    method: "client_secret_post",
+    secret: Redacted.make(`google-secret-${configurationGeneration}`),
+  },
+  callbacks: [
+    {
+      callbackId: OAuthCallbackId.make("google"),
+      redirectUri: OAuthRedirectUri.make("https://app.test/auth/google/callback"),
+    },
+  ],
+  scopes: ["openid"],
+  idTokenSignedResponseAlg: "RS256",
+});
+
+const makeTransport = (
+  input: {
+    readonly claims?: Record<string, unknown>;
+    readonly tokenResponse?: () => Response;
+    readonly userResponse?: () => Response;
+  } = {},
+) => {
+  const requests: Array<{ url: string; clientId: string | null; method: string | undefined }> = [];
+  let nonce = "";
+
+  const fetch: CustomFetch = async (url, init) => {
+    const form = init.body instanceof URLSearchParams ? init.body : new URLSearchParams();
+
+    requests.push({ url, clientId: form.get("client_id"), method: init.method });
+    if (url === "https://accounts.google.com/.well-known/openid-configuration")
+      return json({
+        issuer: googleIssuer,
+        authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_endpoint: "https://oauth2.googleapis.com/token",
+        jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+        response_types_supported: ["code"],
+        code_challenge_methods_supported: ["S256"],
+        id_token_signing_alg_values_supported: ["RS256"],
+        token_endpoint_auth_methods_supported: ["client_secret_post"],
+        authorization_response_iss_parameter_supported: true,
+      });
+    if (url === "https://www.googleapis.com/oauth2/v3/certs") return json({ keys: [jwk] });
+    if (url === "https://oauth2.googleapis.com/token") {
+      const now = Math.floor(Date.now() / 1000);
+
+      return json({
+        access_token: "google-token-never-returned",
+        token_type: "bearer",
+        id_token: jwt({
+          iss: googleIssuer,
+          sub: "stable-google-sub",
+          aud: form.get("client_id"),
+          iat: now,
+          exp: now + 600,
+          nonce,
+          name: "Google Member",
+          ...input.claims,
+        }),
+      });
+    }
+    if (url === "https://github.com/login/oauth/access_token")
+      return (
+        input.tokenResponse?.() ??
+        json({
+          access_token: "github-token-never-returned",
+          token_type: "bearer",
+          scope: "read:user",
+        })
+      );
+    if (url === "https://api.github.com/user")
+      return (
+        input.userResponse?.() ??
+        json({ id: 42, login: "octocat", email: "untrusted-profile@example.test" })
+      );
+    throw new Error("Unexpected endpoint");
+  };
+
+  return {
+    fetch,
+    requests,
+    setNonce: (started: OAuthProtocolPreparation) => {
+      nonce = Redacted.value(started.secrets.oidcNonce!);
+    },
+  };
+};
+
+const begin = (protocol: OAuthProtocol["Service"], provider: "github" | "google") =>
+  protocol.prepareAuthorization({
+    provider: OAuthProviderKey.make(provider),
+    callbackId: OAuthCallbackId.make(provider),
+    flowId: RequestBindingFlowId.make(`flow-${provider}`),
+  });
+
+const exchange = Effect.fn("test.exchange")(function* (
+  protocol: OAuthProtocol["Service"],
+  started: OAuthProtocolPreparation,
+) {
+  return yield* protocol.exchangeVerifiedIdentity({
+    configuration: started.configuration,
+    secrets: started.secrets,
+    verificationStartedAt: yield* DateTime.now,
+    response: {
+      _tag: "Code",
+      state: started.secrets.state,
+      code: Redacted.make("single-use-code"),
+      ...(started.configuration.responseIssuerMode === "required"
+        ? { issuer: started.configuration.issuer }
+        : {}),
+    },
+  });
+});
+
+describe("GitHub OAuth App and Google OIDC composition", () => {
+  it.live("dispatches both providers without exposing email or tokens", () =>
+    Effect.gen(function* () {
+      const transport = makeTransport({
+        claims: { email: "member@gmail.com", email_verified: true, preferred_username: "member" },
+      });
+
+      const protocol = yield* makeOpenIdClientOAuthProtocol({
+        providers: [github(), google()],
+        timeoutSeconds: 1,
+        fetch: transport.fetch,
+      });
+
+      const githubStart = yield* begin(protocol, "github");
+      const googleStart = yield* begin(protocol, "google");
+
+      transport.setNonce(googleStart);
+      expect(new URL(Redacted.value(githubStart.authorizationUrl)).searchParams.get("scope")).toBe(
+        "read:user",
+      );
+      expect(new URL(Redacted.value(googleStart.authorizationUrl)).searchParams.get("scope")).toBe(
+        "openid",
+      );
+      for (const started of [githubStart, googleStart])
+        expect(
+          new URL(Redacted.value(started.authorizationUrl)).searchParams.get(
+            "code_challenge_method",
+          ),
+        ).toBe("S256");
+      expect(yield* exchange(protocol, githubStart)).toEqual({
+        identity: { provider: "github", issuer: "https://github.com", subject: "42" },
+        profile: { displayName: "octocat" },
+      });
+      expect(yield* exchange(protocol, googleStart)).toEqual({
+        identity: { provider: "google", issuer: googleIssuer, subject: "stable-google-sub" },
+      });
+      expect(transport.requests.filter((request) => request.url.endsWith("/user"))).toHaveLength(1);
+      expect(transport.requests.some((request) => request.url.includes("emails"))).toBe(false);
+    }),
+  );
+
+  it.live(
+    "finishes captured retired generations and never substitutes the active credentials",
+    () =>
+      Effect.gen(function* () {
+        const transport = makeTransport();
+
+        const old = yield* makeOpenIdClientOAuthProtocol({
+          providers: [github(), google()],
+          timeoutSeconds: 1,
+          fetch: transport.fetch,
+        });
+
+        const starts = [yield* begin(old, "github"), yield* begin(old, "google")];
+
+        const current = yield* makeOpenIdClientOAuthProtocol({
+          providers: [github(1, "retired"), github(2), google(1, "retired"), google(2)],
+          timeoutSeconds: 1,
+          fetch: transport.fetch,
+        });
+
+        transport.setNonce(starts[1]!);
+        for (const started of starts) yield* exchange(current, started);
+        expect(
+          transport.requests
+            .filter((request) => request.method === "POST")
+            .map((request) => request.clientId),
+        ).toEqual(["github-1", "google-1"]);
+        expect((yield* begin(current, "github")).configuration.configurationGeneration).toBe(2);
+        expect((yield* begin(current, "google")).configuration.configurationGeneration).toBe(2);
+        const count = transport.requests.length;
+
+        yield* expectTag(
+          exchange(current, {
+            ...starts[0]!,
+            configuration: { ...starts[0]!.configuration, issuer: googleIssuer },
+          }),
+          "OAuthUnavailable",
+        );
+        yield* expectTag(
+          exchange(current, {
+            ...starts[0]!,
+            configuration: { ...starts[0]!.configuration, configurationGeneration: 99 },
+          }),
+          "OAuthUnavailable",
+        );
+        expect(transport.requests).toHaveLength(count);
+      }),
+  );
+
+  it.live(
+    "rejects duplicate provider generations and shared callbacks without issuer responses",
+    () =>
+      Effect.gen(function* () {
+        const transport = makeTransport();
+
+        yield* expectTag(
+          makeOpenIdClientOAuthProtocol({
+            providers: [github(), github()],
+            timeoutSeconds: 1,
+            fetch: transport.fetch,
+          }),
+          "OpenIdClientConfigurationError",
+        );
+        yield* expectTag(
+          makeOpenIdClientOAuthProtocol({
+            providers: [github(), { ...google(), callbacks: github().callbacks }],
+            timeoutSeconds: 1,
+            fetch: transport.fetch,
+          }),
+          "OpenIdClientConfigurationError",
+        );
+        expect(transport.requests).toHaveLength(0);
+      }),
+  );
+
+  for (const claims of [
+    { name: undefined },
+    { email: "unverified@example.test", email_verified: false },
+    { email: "member@example.test" },
+  ]) {
+    it.live(`does not require email or profile: ${JSON.stringify(claims)}`, () =>
+      Effect.gen(function* () {
+        const transport = makeTransport({ claims });
+
+        const protocol = yield* makeOpenIdClientOAuthProtocol({
+          providers: [google()],
+          timeoutSeconds: 1,
+          fetch: transport.fetch,
+        });
+
+        const started = yield* begin(protocol, "google");
+
+        transport.setNonce(started);
+        const result = yield* exchange(protocol, started);
+
+        expect(result.identity.subject).toBe("stable-google-sub");
+        expect(result).not.toHaveProperty("email");
+      }),
+    );
+  }
+
+  for (const claims of [
+    { iss: "https://other.test" },
+    { aud: "wrong-client" },
+    { nonce: "wrong-nonce" },
+    { exp: 1 },
+    { iat: 9999999999 },
+  ]) {
+    it.live(`rejects invalid OIDC claims: ${Object.keys(claims)[0]}`, () =>
+      Effect.gen(function* () {
+        const transport = makeTransport({ claims });
+
+        const protocol = yield* makeOpenIdClientOAuthProtocol({
+          providers: [github(), google()],
+          timeoutSeconds: 1,
+          fetch: transport.fetch,
+        });
+
+        const started = yield* begin(protocol, "google");
+
+        transport.setNonce(started);
+        yield* expectTag(exchange(protocol, started), "OAuthProtocolRejected");
+        expect(transport.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+      }),
+    );
+  }
+
+  for (const [body, tag] of [
+    [{ error: "bad_verification_code" }, "OAuthProtocolRejected"],
+    [{ error: "bad_verification_code", access_token: "ambiguous" }, "OAuthUnavailable"],
+    [{ access_token: "token", token_type: "bearer", scope: "repo" }, "OAuthUnavailable"],
+  ] as const) {
+    it.live(
+      `keeps GitHub receipt compatibility inside the combined protocol: ${JSON.stringify(body)}`,
+      () =>
+        Effect.gen(function* () {
+          const transport = makeTransport({ tokenResponse: () => json(body) });
+
+          const protocol = yield* makeOpenIdClientOAuthProtocol({
+            providers: [github(), google()],
+            timeoutSeconds: 1,
+            fetch: transport.fetch,
+          });
+
+          yield* expectTag(exchange(protocol, yield* begin(protocol, "github")), tag);
+          expect(transport.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+          expect(transport.requests.some((request) => request.url.endsWith("/user"))).toBe(false);
+        }),
+    );
+  }
+
+  it.live("the standalone GitHub constructor uses the same provider rules", () =>
+    Effect.gen(function* () {
+      const transport = makeTransport({
+        tokenResponse: () => json({ error: "bad_verification_code" }),
+      });
+
+      const protocol = yield* makeGitHubOAuthAppProtocol({
+        registrations: [
+          {
+            configurationGeneration: 1,
+            issuance: "active",
+            clientId: "github",
+            clientSecret: Redacted.make("secret"),
+            callbacks: github().callbacks,
+          },
+        ],
+        timeoutSeconds: 1,
+        fetch: transport.fetch,
+      });
+
+      yield* expectTag(
+        exchange(protocol, yield* begin(protocol, "github")),
+        "OAuthProtocolRejected",
+      );
+    }),
+  );
+
+  it.live("an identity decoder defect fails unavailable without repeating the exchange", () =>
+    Effect.gen(function* () {
+      const transport = makeTransport();
+      const provider = github();
+
+      const protocol = yield* makeOpenIdClientOAuthProtocol({
+        providers: [
+          {
+            ...provider,
+            identitySource: {
+              ...provider.identitySource,
+              decodeIdentity: () => Effect.die("private decoder detail"),
+            },
+          },
+          google(),
+        ],
+        timeoutSeconds: 1,
+        fetch: transport.fetch,
+      });
+
+      yield* expectTag(exchange(protocol, yield* begin(protocol, "github")), "OAuthUnavailable");
+      expect(transport.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+    }),
+  );
+
+  for (const termination of ["interruption", "timeout"]) {
+    it.live(`${termination} cancels an acquired response body without repeating the exchange`, () =>
+      Effect.gen(function* () {
+        const reading = yield* Deferred.make<void>();
+        let cancelled = false;
+
+        const transport = makeTransport({
+          userResponse: () =>
+            new Response(
+              new ReadableStream(
+                {
+                  pull() {
+                    Deferred.doneUnsafe(reading, Effect.void);
+                  },
+                  cancel() {
+                    cancelled = true;
+                  },
+                },
+                { highWaterMark: 0 },
+              ),
+              { headers: { "content-type": "application/json" } },
+            ),
+        });
+
+        const protocol = yield* makeOpenIdClientOAuthProtocol({
+          providers: [github()],
+          timeoutSeconds: 1,
+          fetch: transport.fetch,
+        });
+
+        const started = yield* begin(protocol, "github");
+        const fiber = yield* exchange(protocol, started).pipe(Effect.forkChild);
+
+        yield* Deferred.await(reading);
+        if (termination === "interruption") yield* Fiber.interrupt(fiber);
+        else yield* expectTag(Fiber.join(fiber), "OAuthUnavailable");
+        expect(cancelled).toBe(true);
+        expect(transport.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+      }),
+    );
+  }
+});

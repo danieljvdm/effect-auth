@@ -160,7 +160,12 @@ flow IDs must not reset account-level attempt budgets.
 Provide `EmailSignInTargets`, `AppAuth.strategies.email.ClaimsForEmail`,
 `ProofPersistence`, `EmailProofDelivery`, and `EmailReturnTargets`, plus session
 and request-binding services. Use an exact return-route allowlist.
+Implement `EmailProofDelivery.layer(vendor, send)` from `@yielded/auth/Proofs`
+with your chosen sender, template, and credentials.
 
 For new accounts use `Email.makeRegistration`; for verified-address management
 use `Email.makeAddresses`. Verification alone does not sign in or link an account.
 See [email persistence](../reference/adapters#email) for those transaction boundaries.
+
+See the [combined login example](./oauth#email-otp-and-github-in-one-application)
+to share Auth, sessions, and client methods with GitHub.

@@ -74,6 +74,48 @@ export const GitHubProtocolLive = Layer.unwrap(
 Register that exact callback URL in your GitHub OAuth App. The adapter requires
 `openid-client`. Other OAuth/OIDC providers use `@yielded/auth/OpenIdClient`.
 
+## Combine OAuth providers
+
+Use one provider list: separate protocol Layers replace the same `OAuthProtocol`
+service. `gitHubOAuthAppProvider` preserves GitHub's response handling within it.
+
+```ts [providers.ts]
+import { gitHubOAuthAppProvider } from "@yielded/auth/GitHub";
+import { openIdClientOAuthProtocolLayer } from "@yielded/auth/OpenIdClient";
+
+import { githubRegistration, googleOidcRegistration } from "./auth-config";
+
+export const ProvidersLive = openIdClientOAuthProtocolLayer({
+  providers: [gitHubOAuthAppProvider(githubRegistration), googleOidcRegistration],
+  timeoutSeconds: 10,
+});
+```
+
+The [server example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-server.ts)
+shows both registration shapes; `google: true` enables optional Google OIDC.
+Replace its example origin and configure server-only credentials and exact callbacks.
+GitHub uses [`read:user`](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)
+without repository access; Google uses [`openid`](https://developers.google.com/identity/openid-connect/openid-connect)
+without mailbox access. Retain retired configurations until their outstanding flows expire.
+
+## Email OTP and GitHub in one application
+
+Compose `Email.makeCode`, `Email.makeRegistration`, and `OAuth.makeRegistration`
+under one `Auth.make` with `Sessions.stateful()`. The
+[contract](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-contract.ts),
+[server](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-server.ts), and
+[client](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-client.ts)
+share sessions, HTTP cookies, and Atom workflows. Supply durable stores, provisioning,
+keyrings, and [email delivery](./codes#supply-the-services). Google is optional.
+
+`RegistrationRequired` leads to `auth.register` with the original flow ID, returned
+reference, fresh command ID, and signup data. After `RegistrationAccepted`, start a
+new sign-in; resolve `ProvisioningPending` through your application. Provision stable
+local subjects bound to the provider/issuer/subject tuple, not provider email.
+
+Keep login and callback GETs public and inert. Private routes must call
+`auth.requireSession()`; `http.middleware` only supplies request context.
+
 ## Redirect to GitHub
 
 <!-- prettier-ignore -->

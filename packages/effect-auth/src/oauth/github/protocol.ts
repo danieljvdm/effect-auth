@@ -6,6 +6,7 @@ import { OAuthConnectedProtocol } from "../OAuthConnectedProtocol";
 import { OAuthProtocol } from "../OAuthProtocol";
 import {
   DefiniteTokenRejection,
+  tokenCompatibility,
   type ConnectedCompatibility,
 } from "../openid-client/compatibility";
 import { makeConnectedProtocolWithCompatibility } from "../openid-client/connected/protocol";
@@ -13,7 +14,7 @@ import {
   OpenIdClientConfigurationError,
   type OpenIdClientOAuthProvider,
 } from "../openid-client/models";
-import { makeOAuthProtocolWithCompatibility } from "../openid-client/protocol";
+import { makeOpenIdClientOAuthProtocol } from "../openid-client/protocol";
 import { ProviderRevocation } from "../openid-client/ProviderRevocation";
 import { boundedFetch } from "../openid-client/transport";
 import { OAuthUnavailable } from "../signInErrors";
@@ -265,6 +266,27 @@ const revocationLayer = (
   );
 };
 
+/** A GitHub.com OAuth App generation for the same provider list as generic OIDC.
+ * Retains GitHub receipt/error rules and requests read:user, with no repository access.
+ * Construction performs no I/O; invalid configuration throws the typed configuration error. */
+export const gitHubOAuthAppProvider = (
+  registration: GitHubOAuthAppGeneration,
+): OpenIdClientOAuthProvider => {
+  let saved: GitHubOAuthAppGeneration;
+
+  try {
+    saved = snapshotOAuthSync(generation, registration);
+  } catch {
+    throw invalid();
+  }
+
+  return {
+    ...provider(saved),
+    scopes: ["read:user"],
+    [tokenCompatibility]: compatibility,
+  };
+};
+
 export const makeGitHubOAuthAppProtocol = Effect.fn("makeGitHubOAuthAppProtocol")(function* (
   options: GitHubOAuthAppProtocolOptions,
 ) {
@@ -273,13 +295,10 @@ export const makeGitHubOAuthAppProtocol = Effect.fn("makeGitHubOAuthAppProtocol"
   if (saved.registrations.filter((item) => item.issuance === "active").length !== 1)
     return yield* invalid();
 
-  return yield* makeOAuthProtocolWithCompatibility(
-    {
-      ...saved,
-      providers: saved.registrations.map((item) => ({ ...provider(item), scopes: ["read:user"] })),
-    },
-    compatibility,
-  );
+  return yield* makeOpenIdClientOAuthProtocol({
+    ...saved,
+    providers: saved.registrations.map(gitHubOAuthAppProvider),
+  });
 });
 
 export const makeGitHubOAuthAppConnectedProtocol = Effect.fn("makeGitHubOAuthAppConnectedProtocol")(

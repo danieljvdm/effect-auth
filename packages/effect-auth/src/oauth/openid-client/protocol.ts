@@ -16,7 +16,7 @@ import {
   OAuthVerifiedExternalIdentity,
 } from "../signInModels";
 import { snapshotOAuth } from "../signInSnapshot";
-import { DefiniteTokenRejection, type TokenCompatibility } from "./compatibility";
+import { DefiniteTokenRejection, tokenCompatibility } from "./compatibility";
 import {
   clientAuthentication,
   installConfigurations,
@@ -110,9 +110,9 @@ const privateConfiguration = <R>(
   timeout: number,
   fetch: client.CustomFetch,
   signal: AbortSignal,
-  compatibility?: TokenCompatibility,
 ) => {
   const provider = entry.provider;
+  const compatibility = provider.protocol === "oauth" ? provider[tokenCompatibility] : undefined;
 
   const configuration = new client.Configuration(
     entry.metadata,
@@ -158,10 +158,10 @@ const privateConfiguration = <R>(
   return configuration;
 };
 
-export const makeOAuthProtocolWithCompatibility = Effect.fn("makeOpenIdClientOAuthProtocol")(
+export const makeOpenIdClientOAuthProtocol = Effect.fn("makeOpenIdClientOAuthProtocol")(
+  // Capture one provider table; each generation retains its own receipt rules.
   function* <R = never>(
     options: OpenIdClientOAuthProtocolOptions<R>,
-    compatibility?: TokenCompatibility,
   ): Effect.fn.Return<
     OAuthProtocol["Service"],
     OpenIdClientConfigurationError | OAuthUnavailable,
@@ -192,13 +192,7 @@ export const makeOAuthProtocolWithCompatibility = Effect.fn("makeOpenIdClientOAu
 
       const result = yield* Effect.tryPromise({
         try: async (signal) => {
-          const configuration = privateConfiguration(
-            entry,
-            timeoutSeconds,
-            fetch,
-            signal,
-            compatibility,
-          );
+          const configuration = privateConfiguration(entry, timeoutSeconds, fetch, signal);
 
           const state = client.randomState();
           const verifier = client.randomPKCECodeVerifier();
@@ -281,13 +275,7 @@ export const makeOAuthProtocolWithCompatibility = Effect.fn("makeOpenIdClientOAu
 
         const exchanged = yield* Effect.tryPromise({
           try: async (signal) => {
-            const configuration = privateConfiguration(
-              entry,
-              timeoutSeconds,
-              fetch,
-              signal,
-              compatibility,
-            );
+            const configuration = privateConfiguration(entry, timeoutSeconds, fetch, signal);
 
             const currentUrl = new URL(saved.redirectUri);
 
@@ -427,10 +415,6 @@ export const makeOAuthProtocolWithCompatibility = Effect.fn("makeOpenIdClientOAu
   },
   unavailableOnDefect,
 );
-
-export const makeOpenIdClientOAuthProtocol = <R = never>(
-  options: OpenIdClientOAuthProtocolOptions<R>,
-) => makeOAuthProtocolWithCompatibility(options);
 
 export const openIdClientOAuthProtocolLayer = <R = never>(
   options: OpenIdClientOAuthProtocolOptions<R>,
