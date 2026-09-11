@@ -46,15 +46,12 @@ GitHub sign-in requests `read:user`; no email address or repository access is re
 ```ts
 const auth = yield* AppAuth;
 const started = yield* auth.signIn({
-  flowId,
-  commandId,
   provider: "github",
-  callbackId: "github",
   returnTarget: "/account",
 });
 ```
 
-Use fresh IDs and redirect to `Redacted.value(started.authorizationUrl)`.
+Redirect to `Redacted.value(started.authorizationUrl)`.
 The callback completes sign-in and redirects to `returnTarget`.
 See the [browser example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-client.ts)
 for the client and Atom workflow.

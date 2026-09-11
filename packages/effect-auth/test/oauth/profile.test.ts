@@ -215,7 +215,7 @@ const fixture = Effect.fn("test.profile.fixture")(function* (
             protocol: "oauth" as const,
             configurationGeneration: 1,
             responseIssuerMode: "required" as const,
-            callbackId: input.callbackId,
+            callbackId: input.callbackId ?? OAuth.OAuthCallbackId.make("github"),
             redirectUri: OAuth.OAuthRedirectUri.make("https://app.test/callback"),
           },
           authorizationUrl: Redacted.make("https://github.com/login/oauth/authorize"),

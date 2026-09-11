@@ -26,7 +26,9 @@ export class OAuthProtocol extends Context.Service<
   {
     readonly prepareAuthorization: (input: {
       readonly provider: OAuthProviderKey;
-      readonly callbackId: typeof OAuthCallbackId.Type;
+      /** Omission selects the provider-named callback, or its only callback.
+       * Ambiguous configurations must reject rather than choose by array order. */
+      readonly callbackId?: typeof OAuthCallbackId.Type;
       readonly flowId: RequestBindingFlowId;
     }) => Effect.Effect<OAuthProtocolPreparation, OAuthRejected | OAuthUnavailable>;
     readonly exchangeVerifiedIdentity: (input: {

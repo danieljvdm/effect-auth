@@ -19,7 +19,9 @@ import { cryptoLayer, defaultLayer, hooksLayer } from "../auth/defaults";
 import { hasCommitScope, type PreparedCommit } from "../hooks/commit";
 import { HookDenied } from "../hooks/models";
 import { reportAuthFailure } from "../internal/diagnostics";
+import type { AuthInvocation } from "../operations/context";
 import type { AuthOperationResult } from "../operations/credentials";
+import { InvalidOperationInput } from "../operations/errors";
 import { makeOperation, operationGroup } from "../operations/operation";
 import { makeRequestBinding } from "../operations/requestBinding";
 import { TokenDigest } from "../Schema";
@@ -61,6 +63,7 @@ import {
   OAuthSignInAuthorization,
   OAuthSignInBegin,
   OAuthSignInComplete,
+  OAuthSignInInput,
   OAuthSignInPolicy,
   OAuthSignInTransactionContext,
   OAuthTransactionSecrets,
@@ -292,14 +295,15 @@ export const makeOAuthMethod = <
             const prepared = yield* prepareAuthorization(
               Object.freeze({
                 provider: request.provider,
-                callbackId: request.callbackId,
+                ...(request.callbackId === undefined ? {} : { callbackId: request.callbackId }),
                 flowId: request.flowId,
               }),
             ).pipe(Effect.flatMap((value) => snapshotOAuth(OAuthProtocolPreparation, value)));
 
             if (
               prepared.configuration.provider !== request.provider ||
-              prepared.configuration.callbackId !== request.callbackId ||
+              (request.callbackId !== undefined &&
+                prepared.configuration.callbackId !== request.callbackId) ||
               (prepared.configuration.protocol === "oidc") !==
                 (prepared.secrets.oidcNonce !== undefined)
             )
@@ -794,6 +798,29 @@ export const makeOAuthMethod = <
     credentials: true,
   });
 
+  /** Allocate once per execution, outside codecs and transport retries. The
+   * underlying Begin operation keeps the explicit IDs used by persistence. */
+  const signIn = Effect.fn("OAuth.signInRequest")(function* (
+    invocation: AuthInvocation,
+    raw: typeof OAuthSignInInput.Encoded,
+  ) {
+    const input = yield* Schema.decodeEffect(OAuthSignInInput)(raw).pipe(
+      Effect.mapError(() => InvalidOperationInput.make({})),
+    );
+
+    const crypto = yield* Crypto.Crypto;
+
+    const flowId = yield* crypto.randomUUIDv4.pipe(
+      Effect.mapError(() => OAuthUnavailable.make({})),
+    );
+
+    const commandId = yield* crypto.randomUUIDv4.pipe(
+      Effect.mapError(() => OAuthUnavailable.make({})),
+    );
+
+    return yield* Begin.invoke(invocation, { ...input, flowId, commandId });
+  });
+
   const handlersLayer = Layer.mergeAll(
     Begin.credentialHandlerLayer(
       Effect.fn("OAuth.Begin")(function* (input) {
@@ -865,6 +892,7 @@ export const makeOAuthMethod = <
     accounts,
     connected,
     CompletionResult,
+    signIn,
     operations: Object.freeze({ Begin, Complete }),
     handlersLayer,
     group: operationGroup(Begin, Complete),

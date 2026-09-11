@@ -49,15 +49,12 @@ The default `openid` scope is enough for sign-in.
 ```ts
 const auth = yield* AppAuth;
 const started = yield* auth.signIn({
-  flowId,
-  commandId,
   provider: "google",
-  callbackId: "google",
   returnTarget: "/account",
 });
 ```
 
-Use fresh IDs and redirect to `Redacted.value(started.authorizationUrl)`.
+Redirect to `Redacted.value(started.authorizationUrl)`.
 The callback completes sign-in and redirects to `returnTarget`.
 See the [server example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-server.ts)
 for Google and GitHub together.

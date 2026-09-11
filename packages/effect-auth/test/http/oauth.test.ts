@@ -3,14 +3,21 @@ import * as Auth from "@yielded/auth/Auth";
 import * as AuthContract from "@yielded/auth/AuthContract";
 import * as GitHub from "@yielded/auth/GitHub";
 import * as AuthHttp from "@yielded/auth/Http";
+import type { OAuthSignInBegin } from "@yielded/auth/OAuth";
 import { OAuthProtocol, OAuthRejected, OAuthReturnTarget } from "@yielded/auth/OAuth";
-import { makeRequestBinding } from "@yielded/auth/Operations";
+import {
+  AuthCredentialCommandCollector,
+  guest,
+  makeRequestBinding,
+} from "@yielded/auth/Operations";
 import { SessionInvalid } from "@yielded/auth/Sessions";
 import { Context, DateTime, Effect, Encoding, Layer, Redacted, Schema } from "effect";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { expect, expectTypeOf } from "vite-plus/test";
 
 import { cryptoLayer } from "../../src/auth/defaults";
+import { makeOAuthMethod } from "../../src/oauth/signInModule";
+import { makeSessionModule } from "../../src/sessions/module";
 
 const contract = AuthContract.make("test/callback", {
   claims: Schema.Struct({}),
@@ -23,6 +30,10 @@ const contract = AuthContract.make("test/callback", {
 const Begin = contract.actions.start.route.operation.rpc.payloadSchema;
 const Complete = contract.actions.finish.route.operation.rpc.payloadSchema;
 const binding = makeRequestBinding("test/callback", "oauth-entry");
+
+const method = makeOAuthMethod("test/callback", {
+  sessions: makeSessionModule("test/callback/sessions", contract.claims),
+});
 
 const bindingConfig = Auth.RequestBindingConfig.layer({
   generation: 1,
@@ -40,11 +51,12 @@ class CallbackRenderer extends Context.Service<
   { readonly render: Effect.Effect<Response> }
 >()("test/callback/Renderer") {}
 
-// The substitute owns only the named application methods at the HTTP seam.
-// Protocol exchange/state semantics have their own adapter suites; the real
-// signed binding and real provider declaration exercise callback correlation.
+// The substitute owns issuance/completion at the operation seam. The real
+// public starter allocates IDs; signed binding and provider declarations
+// exercise callback correlation. Protocol exchange has its own adapter suite.
 const makeApp = (custom: boolean) => {
   const completed: Array<typeof Complete.Type> = [];
+  const begun: Array<typeof OAuthSignInBegin.Type> = [];
 
   type Api = Auth.SessionApi<typeof contract.sessions.Session.Type> & {
     readonly start: (
@@ -72,6 +84,23 @@ const makeApp = (custom: boolean) => {
         const protocol = yield* OAuthProtocol;
         const binder = yield* binding.RequestBinding;
 
+        const beginHandler = method.operations.Begin.credentialHandlerLayer(
+          Effect.fn(function* (input) {
+            begun.push(input);
+
+            const issued = yield* binder
+              .issue(input.flowId)
+              .pipe(Effect.mapError(() => OAuthRejected.make({})));
+
+            const prepared = yield* protocol.prepareAuthorization(input);
+
+            return {
+              value: { ...issued.value, authorizationUrl: prepared.authorizationUrl },
+              credentialCommands: issued.credentialCommands,
+            };
+          }),
+        );
+
         return AppAuth.of({
           verifySession: () => SessionInvalid.make({}),
           getSession: () => Effect.succeed(null),
@@ -81,13 +110,17 @@ const makeApp = (custom: boolean) => {
           start: Effect.fn(
             function* (raw) {
               const input = yield* Schema.decodeUnknownEffect(Begin)(raw);
-              const issued = yield* binder.issue(input.flowId);
-              const prepared = yield* protocol.prepareAuthorization(input);
               const request = yield* Auth.AuthRequest;
 
-              yield* request.credentialCommandSink(issued.credentialCommands);
-
-              return { ...issued.value, authorizationUrl: prepared.authorizationUrl };
+              return yield* method
+                .signIn(request.invocation, input)
+                .pipe(
+                  Effect.provide([beginHandler, cryptoLayer]),
+                  Effect.provideService(
+                    AuthCredentialCommandCollector,
+                    request.credentialCommandSink,
+                  ),
+                );
             },
             Effect.mapError(() => OAuthRejected.make({})),
           ),
@@ -133,6 +166,7 @@ const makeApp = (custom: boolean) => {
             callbacks: {
               github: {
                 path: "/custom/github" as const,
+                callbackId: "custom-github",
                 respond: () => Effect.flatMap(CallbackRenderer, (renderer) => renderer.render),
               },
             },
@@ -163,7 +197,20 @@ const makeApp = (custom: boolean) => {
     ),
   );
 
-  return { http, routes, completed };
+  const localSignIn = Effect.gen(function* () {
+    const auth = yield* AppAuth;
+
+    return yield* auth.start({ provider: "github", returnTarget: "/account" });
+  }).pipe(
+    Effect.provide(http.layer.pipe(Layer.provide(bindingConfig))),
+    Effect.provideService(Auth.AuthRequest, {
+      invocation: guest,
+      credentials: {},
+      credentialCommandSink: () => Effect.void,
+    }),
+  );
+
+  return { http, routes, completed, begun, localSignIn };
 };
 
 it.effect(
@@ -190,10 +237,7 @@ it.effect(
             },
             body: JSON.stringify({
               payload: {
-                flowId: "flow-from-private-cookie",
-                commandId: "command",
                 provider: "github",
-                callbackId: "github",
                 returnTarget: "/account",
               },
             }),
@@ -210,6 +254,13 @@ it.effect(
             }),
           ),
         )(body);
+
+        expect(app.begun[0]!.flowId).toBe(started.value.flowId);
+        expect(app.begun[0]!.commandId).not.toBe(app.begun[0]!.flowId);
+        const local = yield* app.localSignIn;
+
+        expect(local.flowId).not.toBe(started.value.flowId);
+        expect(app.begun[1]!.commandId).not.toBe(app.begun[0]!.commandId);
 
         const authorization = new URL(Redacted.value(started.value.authorizationUrl));
 
@@ -252,8 +303,9 @@ it.effect(
           expect(yield* Effect.promise(() => response.text())).toBe("Continue registration");
         else expect(response.headers.get("location")).toBe("https://app.test/account");
         expect(app.completed).toHaveLength(1);
-        expect(app.completed[0]!.flowId).toBe("flow-from-private-cookie");
+        expect(app.completed[0]!.flowId).toBe(started.value.flowId);
         expect(app.completed[0]!.provider).toBe("github");
+        expect(app.completed[0]!.callbackId).toBe(custom ? "custom-github" : "github");
         expect(body).not.toContain(cookie.split("=")[1]);
       }
     }),

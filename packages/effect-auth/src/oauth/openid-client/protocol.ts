@@ -3,6 +3,7 @@ import * as client from "openid-client";
 
 import { reportAuthFailure } from "../../internal/diagnostics";
 import { RequestBindingFlowId } from "../../operations/requestBinding";
+import { selectCallback } from "../callback";
 import { OAuthProtocol } from "../OAuthProtocol";
 import { OAuthProviderKey } from "../schema";
 import { OAuthProtocolRejected, OAuthRejected, OAuthUnavailable } from "../signInErrors";
@@ -32,7 +33,7 @@ import { boundedFetch } from "./transport";
 
 const beginInput = Schema.Struct({
   provider: OAuthProviderKey,
-  callbackId: OAuthCallbackId,
+  callbackId: Schema.optionalKey(OAuthCallbackId),
   flowId: RequestBindingFlowId,
 });
 
@@ -184,9 +185,10 @@ export const makeOpenIdClientOAuthProtocol = Effect.fn("makeOpenIdClientOAuthPro
 
       const provider = entry?.provider;
 
-      const callback = provider?.callbacks.find(
-        (candidate) => candidate.callbackId === request.callbackId,
-      );
+      const callback =
+        provider === undefined
+          ? undefined
+          : selectCallback(provider.provider, provider.callbacks, request.callbackId);
 
       if (entry === undefined || provider === undefined || callback === undefined)
         return yield* OAuthRejected.make({});

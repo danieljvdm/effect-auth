@@ -243,12 +243,17 @@ export const OAuthCallbackResponse = Schema.Union([
   }),
 ]);
 
+/** Public sign-in request. The server generates the attempt and command IDs. */
+export const OAuthSignInInput = Schema.Struct({
+  provider: OAuthProviderKey,
+  callbackId: Schema.optionalKey(OAuthCallbackId),
+  returnTarget: Schema.String.check(Schema.isMaxLength(2048)),
+});
+
 export const OAuthSignInBegin = Schema.Struct({
   flowId: RequestBindingFlowId,
   commandId: OAuthCommandId,
-  provider: OAuthProviderKey,
-  callbackId: OAuthCallbackId,
-  returnTarget: Schema.String.check(Schema.isMaxLength(2048)),
+  ...OAuthSignInInput.fields,
 });
 
 export const OAuthSignInComplete = Schema.Struct({
