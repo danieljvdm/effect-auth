@@ -6,11 +6,14 @@
     "@yielded/example-auth": "0.0.0"
   },
   "changesets": [
+    "bright-oauth-callbacks",
     "composable-oauth-providers",
     "github-response-issuer",
     "provider-profile-data",
     "quiet-modules-shake",
+    "quiet-oauth-providers",
     "simple-request-auth",
+    "small-oauth-signin",
     "yielded-auth-publication",
     "yielded-repository-links"
   ]

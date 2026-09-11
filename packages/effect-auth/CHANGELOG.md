@@ -1,5 +1,21 @@
 # @yielded/auth
 
+## 0.1.0-beta.6
+
+### Minor Changes
+
+- [#21](https://github.com/yielded-dev/auth/pull/21) [`72a5ab0`](https://github.com/yielded-dev/auth/commit/72a5ab0f0c9d246eaf598122a6a3bbd38bf2b199) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Mount auth with `AuthHttp.layer` and configure OAuth providers with generated callback routes, signed-cookie flow recovery, and callback customization.
+
+  BEHAVIOR CHANGE: Use `GitHub.provider` in the HTTP provider map; use `gitHubOAuthAppProvider` for explicit provider entries in `OpenIdClient.layer`.
+
+- [#22](https://github.com/yielded-dev/auth/pull/22) [`26cee88`](https://github.com/yielded-dev/auth/commit/26cee88102f72cd1483383720a5478234972326c) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Start OAuth sign-in with only `provider` and `returnTarget`; generate attempt IDs on the server and select the configured default callback.
+
+  BEHAVIOR CHANGE: Remove `flowId` and `commandId` from named sign-in calls. Custom `OAuthProtocol` implementations must resolve an omitted `callbackId` to the provider-named callback or the only configured callback, and reject ambiguous selection.
+
+### Patch Changes
+
+- [#19](https://github.com/yielded-dev/auth/pull/19) [`11140f3`](https://github.com/yielded-dev/auth/commit/11140f30362c523516cef727ff81cabcb613ccb3) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Configure GitHub sign-in with `GitHub.layer({ clientId, clientSecret, redirectUri })` and compose hosts with `GitHub.provider` and `OpenIdClient.layer`. Apply the same callback, generation, issuance, and timeout defaults to connected accounts through `GitHub.layerConnected` and `OpenIdClientConnected.layer`, while retaining explicit rotation and provider security settings.
+
 ## 0.1.0-beta.5
 
 ### Patch Changes
