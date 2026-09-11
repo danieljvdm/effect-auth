@@ -5,5 +5,5 @@
     "@yielded/auth": "0.0.0",
     "@yielded/example-auth": "0.0.0"
   },
-  "changesets": []
+  "changesets": ["quiet-modules-shake", "simple-request-auth", "yielded-auth-publication"]
 }
