@@ -1,11 +1,7 @@
 import { Auth, Email, OAuth, Sessions } from "@yielded/auth";
-import {
-  gitHubOAuthAppProtocolLayer,
-  gitHubOAuthAppProvider,
-  type GitHubOAuthAppGeneration,
-} from "@yielded/auth/GitHub";
+import * as GitHub from "@yielded/auth/GitHub";
 import * as AuthHttp from "@yielded/auth/Http";
-import { openIdClientOAuthProtocolLayer } from "@yielded/auth/OpenIdClient";
+import * as OpenIdClient from "@yielded/auth/OpenIdClient";
 import type { SessionSigningKeyring } from "@yielded/auth/Sessions";
 import { Config, Effect, Layer } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
@@ -51,49 +47,30 @@ export const providersLayer = (includeGoogle: boolean) =>
       const githubId = yield* Config.string("GITHUB_CLIENT_ID");
       const githubSecret = yield* Config.redacted("GITHUB_CLIENT_SECRET");
 
-      const github: GitHubOAuthAppGeneration = {
-        configurationGeneration: 1,
-        issuance: "active",
+      const github: GitHub.Registration = {
         clientId: githubId,
         clientSecret: githubSecret,
-        callbacks: [
-          {
-            callbackId: OAuth.OAuthCallbackId.make("github"),
-            redirectUri: OAuth.OAuthRedirectUri.make(`${origin}/auth/github/callback`),
-          },
-        ],
+        redirectUri: `${origin}/auth/github/callback`,
       };
 
-      // Email + GitHub already works with the published standalone adapter.
-      if (!includeGoogle)
-        return gitHubOAuthAppProtocolLayer({ registrations: [github], timeoutSeconds: 10 });
+      if (!includeGoogle) return GitHub.layer(github);
 
       const googleId = yield* Config.string("GOOGLE_CLIENT_ID");
       const googleSecret = yield* Config.redacted("GOOGLE_CLIENT_SECRET");
 
-      return openIdClientOAuthProtocolLayer({
+      return OpenIdClient.layer({
         providers: [
-          gitHubOAuthAppProvider(github),
+          GitHub.provider(github),
           {
-            provider: OAuth.OAuthProviderKey.make("google"),
+            provider: "google",
             protocol: "oidc",
-            configurationGeneration: 1,
-            issuance: "active",
-            issuer: OAuth.OAuthIssuer.make("https://accounts.google.com"),
-            responseIssuerMode: "required",
+            issuer: "https://accounts.google.com",
             clientId: googleId,
-            authentication: { method: "client_secret_post", secret: googleSecret },
-            callbacks: [
-              {
-                callbackId: OAuth.OAuthCallbackId.make("google"),
-                redirectUri: OAuth.OAuthRedirectUri.make(`${origin}/auth/google/callback`),
-              },
-            ],
-            scopes: ["openid"],
-            idTokenSignedResponseAlg: "RS256",
+            clientSecret: googleSecret,
+            tokenEndpointAuthMethod: "client_secret_post",
+            redirectUri: `${origin}/auth/google/callback`,
           },
         ],
-        timeoutSeconds: 10,
       });
     }),
   );

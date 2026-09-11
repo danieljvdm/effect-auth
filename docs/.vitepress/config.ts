@@ -37,12 +37,20 @@ export default defineConfig({
           { text: "Phone codes", link: "/guide/phone" },
           { text: "Passkeys", link: "/guide/passkeys" },
           { text: "Two-factor authentication", link: "/guide/totp" },
-          { text: "OAuth", link: "/guide/oauth" },
+        ],
+      },
+      {
+        text: "OAuth providers",
+        items: [
+          { text: "GitHub", link: "/guide/github" },
+          { text: "Google", link: "/guide/google" },
+          { text: "Other OAuth / OIDC", link: "/guide/oauth#other-providers" },
         ],
       },
       {
         text: "Integration",
         items: [
+          { text: "OAuth setup", link: "/guide/oauth" },
           { text: "HTTP & client state", link: "/guide/http-and-client" },
           { text: "Adapters & persistence", link: "/reference/adapters" },
           { text: "Examples", link: "/guide/examples" },

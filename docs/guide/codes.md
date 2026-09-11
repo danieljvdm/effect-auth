@@ -167,5 +167,5 @@ For new accounts use `Email.makeRegistration`; for verified-address management
 use `Email.makeAddresses`. Verification alone does not sign in or link an account.
 See [email persistence](../reference/adapters#email) for those transaction boundaries.
 
-See the [combined login example](./oauth#email-otp-and-github-in-one-application)
+See the [combined login example](./oauth#email-and-social-login)
 to share Auth, sessions, and client methods with GitHub.

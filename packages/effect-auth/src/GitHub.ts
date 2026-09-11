@@ -1,4 +1,14 @@
 export {
+  layer,
+  layerConnected,
+  provider,
+  type Options,
+  type Registration,
+  type ConnectedOptions,
+  type ConnectedRegistration,
+} from "./oauth/github/options";
+
+export {
   type GitHubOAuthAppConnectedProtocolOptions,
   type GitHubOAuthAppGeneration,
   type GitHubOAuthAppProtocolOptions,

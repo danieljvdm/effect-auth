@@ -31,7 +31,7 @@ const fields = Schema.Record(
 
 const secret = Schema.RedactedFromValue(boundedString(4096));
 
-const authentication = Schema.Union([
+export const authentication = Schema.Union([
   Schema.Struct({ method: Schema.Literal("client_secret_basic"), secret }),
   Schema.Struct({ method: Schema.Literal("client_secret_post"), secret }),
   Schema.Struct({ method: Schema.Literal("none"), publicClient: Schema.Literal(true) }),

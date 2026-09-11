@@ -1,24 +1,15 @@
 import { generateKeyPairSync, sign } from "node:crypto";
 
 import { it } from "@effect/vitest";
-import {
-  GitHubUserProfile,
-  gitHubOAuthAppProvider,
-  makeGitHubOAuthAppProtocol,
-} from "@yielded/auth/GitHub";
+import * as GitHub from "@yielded/auth/GitHub";
 import {
   OAuthCallbackId,
   OAuthIssuer,
   OAuthProviderKey,
-  OAuthRedirectUri,
-  type OAuthProtocol,
+  OAuthProtocol,
   type OAuthProtocolPreparation,
 } from "@yielded/auth/OAuth";
-import {
-  makeOpenIdClientOAuthProtocol,
-  OidcUserProfile,
-  type OpenIdClientOidcProvider,
-} from "@yielded/auth/OpenIdClient";
+import * as OpenIdClient from "@yielded/auth/OpenIdClient";
 import { RequestBindingFlowId } from "@yielded/auth/Operations";
 import { DateTime, Deferred, Effect, Fiber, Redacted, Schema } from "effect";
 import type { CustomFetch } from "openid-client";
@@ -41,44 +32,33 @@ const jwt = (claims: Record<string, unknown>) => {
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 const googleIssuer = OAuthIssuer.make("https://accounts.google.com");
 
-const github = (configurationGeneration = 1, issuance: "active" | "retired" = "active") =>
-  gitHubOAuthAppProvider({
-    configurationGeneration,
-    issuance,
-    clientId: `github-${configurationGeneration}`,
-    clientSecret: Redacted.make(`github-secret-${configurationGeneration}`),
-    callbacks: [
-      {
-        callbackId: OAuthCallbackId.make("github"),
-        redirectUri: OAuthRedirectUri.make("https://app.test/auth/github/callback"),
-      },
-    ],
+const loadProtocol = (options: OpenIdClient.Options) =>
+  OAuthProtocol.pipe(Effect.provide(OpenIdClient.layer(options)));
+
+const loadGitHubProtocol = (options: GitHub.Options) =>
+  OAuthProtocol.pipe(Effect.provide(GitHub.layer(options)));
+
+const github = (configurationGeneration?: number, issuance?: "active" | "retired") =>
+  GitHub.provider({
+    ...(configurationGeneration === undefined ? {} : { configurationGeneration }),
+    ...(issuance === undefined ? {} : { issuance }),
+    clientId: `github-${configurationGeneration ?? 1}`,
+    clientSecret: Redacted.make(`github-secret-${configurationGeneration ?? 1}`),
+    redirectUri: "https://app.test/auth/github/callback",
   });
 
-const google = (
-  configurationGeneration = 1,
-  issuance: "active" | "retired" = "active",
-): OpenIdClientOidcProvider => ({
-  provider: OAuthProviderKey.make("google"),
-  protocol: "oidc",
-  configurationGeneration,
-  issuance,
-  issuer: googleIssuer,
-  responseIssuerMode: "required",
-  clientId: `google-${configurationGeneration}`,
-  authentication: {
-    method: "client_secret_post",
-    secret: Redacted.make(`google-secret-${configurationGeneration}`),
-  },
-  callbacks: [
-    {
-      callbackId: OAuthCallbackId.make("google"),
-      redirectUri: OAuthRedirectUri.make("https://app.test/auth/google/callback"),
-    },
-  ],
-  scopes: ["openid"],
-  idTokenSignedResponseAlg: "RS256",
-});
+const google = (configurationGeneration?: number, issuance?: "active" | "retired") =>
+  ({
+    provider: "google",
+    protocol: "oidc",
+    ...(configurationGeneration === undefined ? {} : { configurationGeneration }),
+    ...(issuance === undefined ? {} : { issuance }),
+    issuer: googleIssuer,
+    clientId: `google-${configurationGeneration ?? 1}`,
+    clientSecret: Redacted.make(`google-secret-${configurationGeneration ?? 1}`),
+    tokenEndpointAuthMethod: "client_secret_post",
+    redirectUri: "https://app.test/auth/google/callback",
+  }) satisfies OpenIdClient.Provider;
 
 const makeTransport = (
   input: {
@@ -186,7 +166,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
           userResponse: () => json({ ...githubProfile, access_token: "must-not-be-profile-data" }),
         });
 
-        const protocol = yield* makeOpenIdClientOAuthProtocol({
+        const protocol = yield* loadProtocol({
           providers: [github()],
           timeoutSeconds: 1,
           fetch: transport.fetch,
@@ -202,7 +182,9 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
         expect(result.profile).toEqual(normalizedGithubProfile);
         // oxlint-disable-next-line no-restricted-properties -- Refine the generic provider JSON with the public GitHub Schema.
         expect(
-          yield* Schema.decodeUnknownEffect(GitHubUserProfile)(result.profile!.providerData!),
+          yield* Schema.decodeUnknownEffect(GitHub.GitHubUserProfile)(
+            result.profile!.providerData!,
+          ),
         ).toEqual(githubProfile);
         expect(Object.isFrozen(result.profile!.providerData)).toBe(true);
         expect(Object.isFrozen(result.profile!.providerData!.plan)).toBe(true);
@@ -223,7 +205,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
           userResponse: () => json({ id: 42, login: "octocat", name, email: null }),
         });
 
-        const protocol = yield* makeOpenIdClientOAuthProtocol({
+        const protocol = yield* loadProtocol({
           providers: [github()],
           timeoutSeconds: 1,
           fetch: transport.fetch,
@@ -249,7 +231,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
       Effect.gen(function* () {
         const transport = makeTransport({ userResponse: () => json(profile) });
 
-        const protocol = yield* makeOpenIdClientOAuthProtocol({
+        const protocol = yield* loadProtocol({
           providers: [github()],
           timeoutSeconds: 1,
           fetch: transport.fetch,
@@ -296,7 +278,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
 
       const transport = makeTransport({ claims: { ...profile, access_token: "not-a-user-claim" } });
 
-      const protocol = yield* makeOpenIdClientOAuthProtocol({
+      const protocol = yield* loadProtocol({
         providers: [google()],
         timeoutSeconds: 1,
         fetch: transport.fetch,
@@ -317,9 +299,9 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
         emailVerified: false,
         providerData: profile,
       });
-      expect(yield* Schema.decodeEffect(OidcUserProfile)(result.profile!.providerData!)).toEqual(
-        profile,
-      );
+      expect(
+        yield* Schema.decodeEffect(OpenIdClient.OidcUserProfile)(result.profile!.providerData!),
+      ).toEqual(profile);
       expect(Object.isFrozen(result.profile!.providerData!.address)).toBe(true);
       expect(result.profile?.providerData).not.toHaveProperty("nonce");
       expect(JSON.stringify(result)).not.toContain("not-a-user-claim");
@@ -334,7 +316,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
         claims: { email: "member@gmail.com", email_verified: true, preferred_username: "member" },
       });
 
-      const protocol = yield* makeOpenIdClientOAuthProtocol({
+      const protocol = yield* loadProtocol({
         providers: [github(), google()],
         timeoutSeconds: 1,
         fetch: transport.fetch,
@@ -391,7 +373,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
       Effect.gen(function* () {
         const transport = makeTransport();
 
-        const old = yield* makeOpenIdClientOAuthProtocol({
+        const old = yield* loadProtocol({
           providers: [github(), google()],
           timeoutSeconds: 1,
           fetch: transport.fetch,
@@ -399,7 +381,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
 
         const starts = [yield* begin(old, "github"), yield* begin(old, "google")];
 
-        const current = yield* makeOpenIdClientOAuthProtocol({
+        const current = yield* loadProtocol({
           providers: [github(1, "retired"), github(2), google(1, "retired"), google(2)],
           timeoutSeconds: 1,
           fetch: transport.fetch,
@@ -441,7 +423,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
         const transport = makeTransport();
 
         yield* expectTag(
-          makeOpenIdClientOAuthProtocol({
+          loadProtocol({
             providers: [github(), github()],
             timeoutSeconds: 1,
             fetch: transport.fetch,
@@ -449,10 +431,10 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
           "OpenIdClientConfigurationError",
         );
         yield* expectTag(
-          makeOpenIdClientOAuthProtocol({
+          loadProtocol({
             providers: [
               { ...github(), responseIssuerMode: "unsupported" },
-              { ...google(), callbacks: github().callbacks },
+              { ...google(), redirectUri: "https://app.test/auth/github/callback" },
             ],
             timeoutSeconds: 1,
             fetch: transport.fetch,
@@ -472,7 +454,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
       Effect.gen(function* () {
         const transport = makeTransport({ claims });
 
-        const protocol = yield* makeOpenIdClientOAuthProtocol({
+        const protocol = yield* loadProtocol({
           providers: [google()],
           timeoutSeconds: 1,
           fetch: transport.fetch,
@@ -500,7 +482,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
       Effect.gen(function* () {
         const transport = makeTransport({ claims });
 
-        const protocol = yield* makeOpenIdClientOAuthProtocol({
+        const protocol = yield* loadProtocol({
           providers: [github(), google()],
           timeoutSeconds: 1,
           fetch: transport.fetch,
@@ -526,7 +508,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
         Effect.gen(function* () {
           const transport = makeTransport({ tokenResponse: () => json(body) });
 
-          const protocol = yield* makeOpenIdClientOAuthProtocol({
+          const protocol = yield* loadProtocol({
             providers: [github(), google()],
             timeoutSeconds: 1,
             fetch: transport.fetch,
@@ -545,17 +527,10 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
         tokenResponse: () => json({ error: "bad_verification_code" }),
       });
 
-      const protocol = yield* makeGitHubOAuthAppProtocol({
-        registrations: [
-          {
-            configurationGeneration: 1,
-            issuance: "active",
-            clientId: "github",
-            clientSecret: Redacted.make("secret"),
-            callbacks: github().callbacks,
-          },
-        ],
-        timeoutSeconds: 1,
+      const protocol = yield* loadGitHubProtocol({
+        clientId: "github",
+        clientSecret: Redacted.make("secret"),
+        redirectUri: "https://app.test/auth/github/callback",
         fetch: transport.fetch,
       });
 
@@ -570,7 +545,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
     Effect.gen(function* () {
       const transport = makeTransport();
 
-      const protocol = yield* makeGitHubOAuthAppProtocol({
+      const protocol = yield* loadGitHubProtocol({
         registrations: [
           {
             configurationGeneration: 1,
@@ -637,7 +612,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
       const transport = makeTransport();
       const provider = github();
 
-      const protocol = yield* makeOpenIdClientOAuthProtocol({
+      const protocol = yield* loadProtocol({
         providers: [
           {
             ...provider,
@@ -681,7 +656,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
             ),
         });
 
-        const protocol = yield* makeOpenIdClientOAuthProtocol({
+        const protocol = yield* loadProtocol({
           providers: [github()],
           timeoutSeconds: 1,
           fetch: transport.fetch,
