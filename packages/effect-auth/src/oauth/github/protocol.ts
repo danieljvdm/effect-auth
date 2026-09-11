@@ -29,7 +29,8 @@ import type {
 
 const unavailable = () => OAuthUnavailable.make({});
 const invalid = () => OpenIdClientConfigurationError.make({ reason: "provider" });
-const issuer = OAuthIssuer.make("https://github.com");
+// GitHub's OAuth authorization server issuer, including its RFC 9207 callback value.
+const issuer = OAuthIssuer.make("https://github.com/login/oauth");
 
 const headers = Object.freeze({
   Accept: "application/vnd.github+json",
@@ -92,7 +93,7 @@ const provider = (
   issuance: registration.issuance,
   issuer,
   protocol: "oauth",
-  responseIssuerMode: "unsupported",
+  responseIssuerMode: "required",
   clientId: registration.clientId,
   authentication: { method: "client_secret_post", secret: registration.clientSecret },
   callbacks: registration.callbacks,

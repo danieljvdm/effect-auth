@@ -74,6 +74,22 @@ export const GitHubProtocolLive = Layer.unwrap(
 Register that exact callback URL in your GitHub OAuth App. The adapter requires
 `openid-client`. Other OAuth/OIDC providers use `@yielded/auth/OpenIdClient`.
 
+GitHub's callback includes an `iss` parameter identifying
+`https://github.com/login/oauth`. Preserve it as `response.issuer`: the adapter
+requires an exact match before exchanging the code. Do not remove or replace a
+callback issuer to bypass validation. This is GitHub's
+[OAuth issuer](https://docs.github.com/en/apps/github-authentication-discovery-endpoints),
+not the issuer for GitHub Actions tokens.
+
+The previous adapter used `https://github.com` and rejected issuer-bearing
+callbacks. After upgrading, start fresh sign-in attempts; pending flows captured
+with the old issuer cannot complete. Existing GitHub login bindings and connected
+grants using the old issuer are not reused or linked automatically. Revoke old
+connected grants before upgrading, then register or explicitly link the corrected
+GitHub identity and reconnect any required grants. Do not rewrite stored issuer
+values: they participate in identity keys and protected transaction context.
+Other providers, local subjects, and application data do not need to reset.
+
 ## Combine OAuth providers
 
 Use one provider list: separate protocol Layers replace the same `OAuthProtocol`
@@ -149,7 +165,7 @@ const result = yield* auth.completeSignIn({
   requestBinding,
   provider: "github",
   callbackId: "github",
-  response: { _tag: "Code", state, code },
+  response: { _tag: "Code", state, code, issuer },
 });
 ```
 
