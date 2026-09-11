@@ -17,6 +17,7 @@
     "example:phone": "bun src/phone-sqlite-bun.ts"
   },
   "dependencies": {
+    "@effect/atom-react": "catalog:",
     "@effect/platform-bun": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/sql-libsql": "catalog:",
@@ -25,9 +26,14 @@
     "@effect/sql-sqlite-wasm": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
-    "effect-auth": "workspace:*"
+    "effect-auth": "workspace:*",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "scheduler": "catalog:"
   },
   "devDependencies": {
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "typescript": "catalog:"
   }
 }

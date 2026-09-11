@@ -60,6 +60,7 @@ const bindDefine = <
         completeSignIn: module.operations.Complete.invoke,
       },
       module.layer(options.policy),
+      { completion: true },
     ),
   });
 };
@@ -167,6 +168,7 @@ const bindDefineRegistration = <
         register: registration.operations.Complete.invoke,
       },
       layer,
+      { completion: true },
     ),
   });
 };

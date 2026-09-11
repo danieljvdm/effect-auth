@@ -321,6 +321,7 @@ export const makePasskeyMethod = <
         Layer.provide(hooksLayer),
         Layer.provide(cryptoLayer),
       ),
+      { completion: true },
     ),
   });
 
@@ -348,6 +349,7 @@ export const makePasskeyMethod = <
     strategy: makeAuthStrategy(
       { signIn: Begin.invoke, completeSignIn: Complete.invoke },
       strategyLayer,
+      { completion: true },
     ),
     Passkeys,
     ClaimsForPasskey,

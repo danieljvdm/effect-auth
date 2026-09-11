@@ -11,12 +11,13 @@ recovery to enable full password management.
 
 ```ts [auth.ts]
 import { Schema } from "effect";
-import { Auth, Password } from "effect-auth";
+import { Auth, Password, Sessions } from "effect-auth";
 
 import { proofPolicy } from "./auth-config";
 
-export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
+export const AppAuth = Auth.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
+  sessions: Sessions.stateful(),
   strategies: {
     password: Password.make({
       registration: Schema.Struct({ displayName: Schema.NonEmptyString }),
@@ -29,7 +30,7 @@ export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
     }),
   },
   defaultStrategy: "password",
-}) {}
+});
 ```
 
 The [email guide](./codes) shows the proof-policy fields. Your application

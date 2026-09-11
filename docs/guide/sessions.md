@@ -4,83 +4,96 @@ description: Configure session lifetimes, read a session, and sign out.
 
 # Sessions
 
-Use `AppAuth.sessions` to configure and inspect the sessions issued by your
-[auth service](./getting-started#define-your-auth-service).
+Configure sessions on `Auth.make`. Request-aware methods handle credential lookup
+and delivery through the [HTTP boundary](./http-and-client).
 
 ## Configure sessions
 
-```ts [sessions.ts]
-import { AppAuth } from "./auth";
+```ts [auth.ts]
+import { Schema } from "effect";
+import { Auth, Sessions } from "effect-auth";
 
-export const SessionsLive = AppAuth.sessions.layer({
-  issuer: "my-app",
-  audience: "my-app",
-  generation: 1,
-  idleLifetimeMillis: 30 * 60 * 1000,
-  absoluteLifetimeMillis: 7 * 24 * 60 * 60 * 1000,
-  renewalIntervalMillis: 5 * 60 * 1000,
-  maximumIssuedAbsoluteLifetimeMillis: 7 * 24 * 60 * 60 * 1000,
-  maximumTokenBytes: 4096,
-  requireImmediateInvalidation: true,
+export const AppAuth = Auth.make("app/Auth", {
+  claims: Schema.Struct({ displayName: Schema.String }),
+  sessions: Sessions.stateful({
+    idleTimeout: "30 minutes",
+    maxAge: "7 days",
+    renewAfter: "5 minutes",
+  }),
 });
 ```
 
-This selects stateful sessions and authentication completion. Supply
-`AppAuth.sessions.StatefulSessionPersistence` and `AuthenticationAuthority`
-from your application adapters, then provide `SessionsLive` to `AppAuth.layer`.
+This service only reads and manages sessions. Supply its bound
+`AppAuth.sessions.StatefulSessionPersistence` and `SessionRepository` through your
+storage Layer. It does not require authentication or provisioning authority.
+Adding an authentication strategy also selects the default completion authority;
+your account Layer supplies `AuthenticationAuthority` for issuing sessions.
 
-| Strategy                                  | How it verifies                                      | Revocation                                 |
-| ----------------------------------------- | ---------------------------------------------------- | ------------------------------------------ |
-| `layer(policy)` / `statefulLayer(policy)` | Checks the stored session.                           | Immediate, through persistence.            |
-| `statelessLayer(policy, keys)`            | Verifies a signed token.                             | Existing tokens remain valid until expiry. |
-| `stateAssistedLayer(policy, keys)`        | Verifies a signed token and checks current validity. | Uses `SignedSessionValidity`.              |
+| Configuration                                  | How it verifies                               | Sign-out                                                      |
+| ---------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------- |
+| `Sessions.stateful(options)`                   | Checks the stored session.                    | Revokes through persistence.                                  |
+| `Sessions.stateless({ keys, ...options })`     | Verifies a signed token.                      | Clears this client only; existing tokens retain their expiry. |
+| `Sessions.stateAssisted({ keys, ...options })` | Verifies a signed token and current validity. | Uses `SignedSessionValidity` for immediate invalidation.      |
 
-The lower-level strategy Layers need a separate `completionLayer()` for issuing
-sessions. Choose stateless sessions only when your policy accepts delayed invalidation.
+Signed modes require an explicit keyring. Defaults are a seven-day idle timeout,
+thirty-day maximum age, and renewal after one day; shorter lifetimes bound the
+idle and renewal intervals. Issuer and audience default to the stable session
+namespace, generation to `1`, and the token limit to `4096` bytes. After reducing
+`maxAge`, retain `maximumIssuedAge` for the lifetime of previously issued tokens.
 
 ## Read the current session
 
 ```ts [current-session.ts]
-import { Effect, Redacted } from "effect";
+import { Effect } from "effect";
 
 import { AppAuth } from "./auth";
 
-export const currentSession = Effect.fn("app.currentSession")(
-  function* (cookie: string) {
-    const sessions = yield* AppAuth.sessions.SessionStrategy;
-    const session = yield* sessions.verify(Redacted.make(cookie));
+export const currentSession = Effect.fn("app.currentSession")(function* () {
+  const auth = yield* AppAuth;
+  const session = yield* auth.getSession();
 
-    return { subjectId: session.subjectId, name: session.claims.displayName };
-  },
-  Effect.catchTag("SessionInvalid", () => Effect.succeed(null)),
-);
+  return session === null
+    ? null
+    : { subjectId: session.subjectId, name: session.claims.displayName };
+});
 ```
 
-An invalid or expired credential becomes `null` here. An unavailable session store
-still fails, allowing your handler to return a service error.
+The method reads the incoming session credential from `Auth.AuthRequest`. Missing,
+invalid, or expired credentials return `null`. An unavailable session store,
+defect, or interruption remains a failure. No cookie parsing or catch handler is
+needed in application code.
+
+Use `yield* auth.requireSession()` when a handler requires authentication; it fails
+with `AuthenticationRequired` for an anonymous request. Outside a request, use
+`auth.verifySession(redactedCredential)` to verify an explicit credential without
+delivery requirements.
 
 ## Sign out
 
 ```ts [sign-out.ts]
 import { Effect } from "effect";
-import { Auth } from "effect-auth";
-import { AuthCredentialCommandCollector, guest } from "effect-auth/Operations";
 
 import { AppAuth } from "./auth";
 
-export const signOut = Effect.fn("app.signOut")(function* (cookie: string) {
-  const request = yield* Auth.AuthRequest;
+export const signOut = Effect.fn("app.signOut")(function* () {
+  const auth = yield* AppAuth;
 
-  return yield* AppAuth.sessions.operations.SignOut.invoke(guest, {
-    credential: cookie,
-  }).pipe(Effect.provideService(AuthCredentialCommandCollector, request.credentialCommandSink));
+  return yield* auth.signOut();
 });
 ```
 
-Provide session operation handlers from `AppAuth.sessions.handlersLayer(...)`.
-The private command sink clears the cookie. For HTTP applications,
-[map the sign-out operation](./http-and-client#define-the-routes) and let the
-server adapter handle cookie delivery.
+Sign-out reads the incoming credential without first verifying it and clears the
+client cookie through private delivery. Its result reports `revoked`,
+`already-invalid`, `client-only`, or `SessionSignOutUnavailable`. Local clearing
+is not proof of server revocation; do not report global sign-out after a storage
+failure. [Mounting the auth routes](./http-and-client#configure-the-server) supplies
+request context and cookie delivery.
+
+## Renew a session
+
+Call `yield* auth.renewSession()` to renew explicitly. `getSession()` and
+`requireSession()` never silently rotate credentials. Renewal delivers a
+replacement credential through the same request boundary.
 
 ## Session lifecycle
 
@@ -92,19 +105,16 @@ verify password / passkey / provider
   → return public session
 ```
 
-A failed sign-out can clear the local cookie without proving server revocation.
-Do not report global sign-out when the persistence operation failed.
+## Custom completion and additional factors
 
-<details>
-<summary>Additional factors and step-up</summary>
+Omit `sessions` from `Auth.make` when supplying custom session/completion Layers.
+The lower-level `AppAuth.sessions.statefulLayer`, `statelessLayer`, and
+`stateAssistedLayer` constructors remain available for runtime-selected policy.
 
 Configure `completionLayer({ pendingLifetimeMillis, attemptLimit })` with
 `PendingAuthentication` persistence to support a second factor. A pending proof
-is not an authenticated session. [TOTP](./totp) shows completion with an authenticator.
+is not an authenticated session. [TOTP](./totp) shows the complete Layer setup.
 
 `SessionStrategy.inspect` returns private provenance for authorization decisions;
-ordinary `verify` results omit it. Step-up persists a challenge bound to the source
-session and credential revision. Completion rechecks both before replacing the
-session; a stale session cannot be upgraded.
-
-</details>
+ordinary verification results omit it. Step-up binds its challenge to the source
+session and credential revision and rechecks both before replacing the session.

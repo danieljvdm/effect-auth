@@ -10,12 +10,13 @@ Use `PhoneOtp` to sign in existing accounts with an SMS code.
 
 ```ts [auth.ts]
 import { Schema } from "effect";
-import { Auth, PhoneOtp } from "effect-auth";
+import { Auth, PhoneOtp, Sessions } from "effect-auth";
 
 import { proofKeys } from "./auth-config";
 
-export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
+export const AppAuth = Auth.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
+  sessions: Sessions.stateful(),
   strategies: {
     phone: PhoneOtp.make({
       template: "sign-in-sms",
@@ -23,7 +24,7 @@ export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
     }),
   },
   defaultStrategy: "phone",
-}) {}
+});
 ```
 
 Load `proofKeys` from your secret configuration. The default code has six digits

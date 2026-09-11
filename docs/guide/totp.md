@@ -13,7 +13,7 @@ single-use recovery codes.
 import { Schema } from "effect";
 import { Auth, Password, Totp } from "effect-auth";
 
-export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
+export const AppAuth = Auth.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
   strategies: {
     password: Password.make(),
@@ -31,12 +31,13 @@ export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
     }),
   },
   defaultStrategy: "password",
-}) {}
+});
 ```
 
 Your `AuthenticationAuthority` decides which accounts require two factors.
 Provide `TotpPersistence`, `TotpSecretKeys`, `TotpActionEvidence`, and stateful
-sessions with pending-authentication support.
+sessions with pending-authentication support. This definition omits `sessions`
+so you can supply the custom completion Layer below to `AppAuth.layer`.
 
 ```ts [sessions.ts]
 import { Layer } from "effect";

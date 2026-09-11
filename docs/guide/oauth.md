@@ -11,10 +11,11 @@ session. This example uses a GitHub OAuth App.
 
 ```ts [auth.ts]
 import { Schema } from "effect";
-import { Auth, OAuth } from "effect-auth";
+import { Auth, OAuth, Sessions } from "effect-auth";
 
-export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
+export const AppAuth = Auth.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
+  sessions: Sessions.stateful(),
   strategies: {
     github: OAuth.make({
       policy: {
@@ -27,7 +28,7 @@ export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
     }),
   },
   defaultStrategy: "github",
-}) {}
+});
 ```
 
 `OAuth.make` signs in an existing linked identity. For account creation, use

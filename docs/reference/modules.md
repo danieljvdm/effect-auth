@@ -4,7 +4,7 @@ description: Public imports, browser-safe contracts, and optional adapters.
 
 # Public modules
 
-Start with `Auth.Service` to compose authentication for an application. Choose
+Start with `Auth.make` to compose authentication for an application. Choose
 individual modules for your methods, session strategy, and integration boundaries.
 
 ## Imports and tree shaking
@@ -48,13 +48,21 @@ Import these as `effect-auth/<Module>` or as namespaces from `effect-auth`:
 Keep shared browser/server definitions in the contract modules. Import browser
 helpers separately from server verifiers and persistence adapters.
 
-| Modules                                              | Purpose                                                      |
-| ---------------------------------------------------- | ------------------------------------------------------------ |
-| `SessionContract`, `PasskeyContract`, `TotpContract` | Shared public schemas without server orchestration.          |
-| `OperationHttp`                                      | Shared operation HTTP descriptors.                           |
-| `OperationHttpClient`, `OperationHttpServer`         | Client execution and server routing.                         |
-| `Atom`                                               | Effect Atom queries, mutations, and client workflows.        |
-| `Http`, `HttpServer`, `Rpc`                          | Lower-level HTTP and RPC integrations; direct subpaths only. |
+| Modules                                              | Purpose                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------- |
+| `AuthContract`                                       | Shared named actions, schemas, and native HttpApi groups.           |
+| `Http`                                               | Request context, cookies, middleware, and mounting named auth APIs. |
+| `Client`                                             | Scoped service with typed `client.auth` methods.                    |
+| `SessionContract`, `PasskeyContract`, `TotpContract` | Shared public schemas without server orchestration.                 |
+| `OperationHttp`                                      | Shared operation HTTP descriptors.                                  |
+| `OperationHttpClient`, `OperationHttpServer`         | Client execution and server routing.                                |
+| `Atom`                                               | Effect Atom queries, mutations, and client workflows.               |
+| `HttpServer`, `Rpc`                                  | Lower-level HTTP and RPC integrations.                              |
+
+`AuthContract` is also available as a root namespace. Import `Http`, `Client`,
+`Atom`, and the low-level transport modules through their direct subpaths.
+React applications use `@effect/atom-react` with the same importable atoms;
+Effect Auth has no React-specific export.
 
 See [HTTP and client state](../guide/http-and-client) for contract sharing and
 client workflow composition.
@@ -81,7 +89,7 @@ and runtime constraints.
 ## Focused service modules
 
 These direct subpaths expose individual services and contracts for lower-level
-composition. Start with `Auth.Service` for application authentication.
+composition. Start with `Auth.make` for application authentication.
 
 | Modules                                                     | Responsibility                                      |
 | ----------------------------------------------------------- | --------------------------------------------------- |

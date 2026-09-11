@@ -42,12 +42,23 @@ for transaction and retry requirements.
 
 ## HTTP and browser clients
 
+Start with the named API examples:
+
+| Source                                                                                                       | Integration                                          |
+| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| [Shared contract](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-contract.ts)    | Auth actions beside an existing HttpApi group.       |
+| [Server](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-server.ts)               | `Auth.make`, handlers, and raw router mounting.      |
+| [Client](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-client.ts)               | `Client.make`, importable atoms, and Effect queries. |
+| [React](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-react.ts)                 | Standard Atom registry and hooks.                    |
+| [SSR](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/auth-ssr.ts)                     | Request-local registries and session hydration.      |
+| [Protected endpoints](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/session-http.ts) | Typed session middleware on an HttpApi.              |
+
 The Studio example separates
 [auth composition](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/studio-auth.ts),
 [HTTP server](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/studio-http-server.ts),
 and [browser client](https://github.com/danieljvdm/effect-auth/blob/main/examples/auth/src/studio-browser.ts).
-These are integration references rather than a packaged application. The
-[HTTP and client state guide](./http-and-client) explains their shared contract.
+These are lower-level integration references rather than a packaged application.
+The [HTTP and client state guide](./http-and-client) explains contract sharing.
 
 Example stores, keys, delivery services, and policies are disposable development
 fixtures. Replace them with your application's authority and durable adapters before

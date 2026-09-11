@@ -1,4 +1,6 @@
 export * as Auth from "./Auth.ts";
+export * as AuthContract from "./AuthContract.ts";
+export * as Client from "./Client.ts";
 export * as Email from "./Email.ts";
 export * as Hooks from "./Hooks.ts";
 export * as Identity from "./Identity.ts";

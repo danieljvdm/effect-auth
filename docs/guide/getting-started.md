@@ -4,23 +4,43 @@ description: Define your authentication service and call it from your applicatio
 
 # Getting started
 
-Define a service, choose your methods, and call them from your application.
+Define a shared contract, choose your server methods, and call them from your
+application. The contract also supplies your HTTP endpoints and browser client.
+
+## Define the shared contract
+
+```ts [auth-contract.ts]
+import { Schema } from "effect";
+import * as AuthContract from "effect-auth/AuthContract";
+
+export const AuthApi = AuthContract.make("app/Auth", {
+  claims: Schema.Struct({ displayName: Schema.String }),
+  actions: (sessions) => ({ signIn: AuthContract.passwordSignIn(sessions) }),
+});
+```
+
+The contract includes `getSession`, `requireSession`, `signOut`, and
+`renewSession`. The `actions` callback explicitly adds password sign-in.
+Keep this module free of server configuration, keys, and persistence.
 
 ## Define your auth service
 
 ```ts [auth.ts]
-import { Schema } from "effect";
-import { Auth, Password } from "effect-auth";
+import { Auth, Password, Sessions } from "effect-auth";
 
-export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
-  claims: Schema.Struct({ displayName: Schema.String }),
+import { AuthApi } from "./auth-contract";
+
+export const AppAuth = Auth.make(AuthApi, {
+  sessions: Sessions.stateful(),
   strategies: { password: Password.make() },
   defaultStrategy: "password",
-}) {}
+});
 ```
 
 `claims` defines the data your application puts in each session. The password
 method verifies credentials; your account service supplies `displayName`.
+`Auth.make` declares a yieldable service. `AppAuth.layer` acquires its scoped
+resources; constructing the definition performs no I/O.
 
 ## Sign in
 
@@ -48,9 +68,9 @@ see [passwords](./passwords#handle-a-rejected-sign-in) for a rejected-login resp
 
 ```text
 request handler
-  ├─ Auth.AuthRequest        caller + cookie delivery, per request
+  ├─ Auth.AuthRequest        credentials + caller + delivery, per request
   └─ AppAuth.layer
-       ├─ session Layer     storage + expiry policy
+       ├─ session storage   selected by Sessions.stateful(...)
        ├─ account Layer     credential lookup + claims
        └─ persistence Layer transactions + durable records
 ```
@@ -63,14 +83,17 @@ boundary and writes credential cookies.
 
 ## Add another method
 
-Each strategy gets a name. Pass that name when calling a non-default strategy:
+For local composition, you can pass an identifier and claims directly to
+`Auth.make`. Each strategy gets a name. Pass that name when calling a non-default
+strategy:
 
 ```ts [auth-with-passkeys.ts]
 import { Schema } from "effect";
-import { Auth, Passkey, Password } from "effect-auth";
+import { Auth, Passkey, Password, Sessions } from "effect-auth";
 
-export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
+export const AppAuth = Auth.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
+  sessions: Sessions.stateful(),
   strategies: {
     password: Password.make(),
     passkey: Passkey.make({
@@ -82,12 +105,14 @@ export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
     }),
   },
   defaultStrategy: "password",
-}) {}
+});
 ```
 
 Call `auth.signIn({ email, password })` for passwords or
 `auth.signIn("passkey", { flowId, commandId, profileId: "default" })` for passkeys.
 The [passkey guide](./passkeys) shows the browser ceremony and completion.
+To expose it remotely, add the selected actions to a shared contract as shown in
+[HTTP and client state](./http-and-client#compose-a-passkey-workflow).
 
 ## Package status
 

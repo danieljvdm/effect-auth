@@ -6,6 +6,7 @@ export class OperationConfigurationError extends Schema.TaggedError<OperationCon
   {
     reason: Schema.Literals([
       "duplicate-operation",
+      "invalid-action",
       "internal-exposure",
       "credential-handler",
       "reveal-configuration",

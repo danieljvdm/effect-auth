@@ -11,12 +11,13 @@ complete sign-in.
 
 ```ts [auth.ts]
 import { Schema } from "effect";
-import { Auth, Email } from "effect-auth";
+import { Auth, Email, Sessions } from "effect-auth";
 
 import { proofKeys, proofPolicy } from "./auth-config";
 
-export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
+export const AppAuth = Auth.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
+  sessions: Sessions.stateful(),
   strategies: {
     email: Email.makeCode({
       template: "sign-in-code",
@@ -26,7 +27,7 @@ export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
     }),
   },
   defaultStrategy: "email",
-}) {}
+});
 ```
 
 `proofKeys` is your secret-managed proof keyring. Set expiry and attempt limits

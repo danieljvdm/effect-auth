@@ -427,6 +427,7 @@ export const makePhoneOtp = <
         ...lifecycle.methods,
       },
       layer.pipe(Layer.provideMerge(cryptoLayer)),
+      { completion: true },
     ),
   });
 };

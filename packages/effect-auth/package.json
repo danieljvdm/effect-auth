@@ -69,7 +69,9 @@
     "./PhoneOtp": "./src/PhoneOtp.ts",
     "./Totp": "./src/Totp.ts",
     "./PasskeyContract": "./src/PasskeyContract.ts",
-    "./TotpContract": "./src/TotpContract.ts"
+    "./TotpContract": "./src/TotpContract.ts",
+    "./AuthContract": "./src/AuthContract.ts",
+    "./Client": "./src/Client.ts"
   },
   "publishConfig": {
     "access": "public"

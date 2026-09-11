@@ -11,10 +11,11 @@ browser to authenticate, and verify the response on your server.
 
 ```ts [auth.ts]
 import { Schema } from "effect";
-import { Auth, Passkey } from "effect-auth";
+import { Auth, Passkey, Sessions } from "effect-auth";
 
-export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
+export const AppAuth = Auth.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
+  sessions: Sessions.stateful(),
   strategies: {
     passkey: Passkey.make({
       relyingParty: {
@@ -25,7 +26,7 @@ export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
     }),
   },
   defaultStrategy: "passkey",
-}) {}
+});
 ```
 
 Use your actual relying-party ID and exact allowed origins. Changing these can

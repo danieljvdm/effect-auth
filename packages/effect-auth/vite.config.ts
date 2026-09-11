@@ -6,6 +6,8 @@ export default defineConfig({
     entry: [
       "src/index.ts",
       "src/Auth.ts",
+      "src/AuthContract.ts",
+      "src/Client.ts",
       "src/Drizzle.ts",
       "src/DrizzleD1.ts",
       "src/DrizzleLibsql.ts",

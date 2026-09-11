@@ -45,17 +45,17 @@ import { AccountsLive } from "./auth-accounts";
 import { requestBinding } from "./auth-config";
 import { PasswordPersistenceLive } from "./auth-persistence";
 import { SessionPersistenceLive } from "./session-persistence";
-import { SessionsLive } from "./sessions";
 
 export const AuthLive = AppAuth.layer.pipe(
-  Layer.provide(SessionsLive),
   Layer.provide(Auth.RequestBindingConfig.layer(requestBinding)),
   Layer.provide(Layer.mergeAll(PasswordPersistenceLive, SessionPersistenceLive, AccountsLive)),
 );
 ```
 
 The `auth-*` imports are your application modules. TypeScript reports any remaining
-service requirements. Keep `Auth.AuthRequest` out of this shared Layer; supply it
+service requirements. `Sessions.stateful(...)` on `Auth.make` configures sessions;
+supply a separate session/completion Layer only when using custom session setup
+such as [pending authentication](../guide/totp). Keep `Auth.AuthRequest` out of this shared Layer; supply it
 for each request or use [the HTTP adapter](../guide/http-and-client).
 
 ## Choose a driver

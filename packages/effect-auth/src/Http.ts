@@ -1,3 +1,5 @@
+export { make, type AuthHttpOptions } from "./http/auth-http";
+
 export { AuthApi } from "./http/auth-api";
 
 export {

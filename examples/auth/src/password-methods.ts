@@ -32,6 +32,7 @@ const program = Effect.gen(function* () {
   const collector: AuthCredentialCommand[] = [];
 
   const call = {
+    credentials: {},
     credentialCommandSink: (commands: readonly AuthCredentialCommand[]) =>
       Effect.sync(() => {
         collector.push(...commands);

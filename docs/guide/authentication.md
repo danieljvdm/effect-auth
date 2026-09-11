@@ -22,10 +22,11 @@ your request handler
 
 ```ts [auth.ts]
 import { Effect, Schema } from "effect";
-import { Auth, Passkey, Password } from "effect-auth";
+import { Auth, Passkey, Password, Sessions } from "effect-auth";
 
-export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
+export const AppAuth = Auth.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
+  sessions: Sessions.stateful(),
   strategies: {
     password: Password.make(),
     passkey: Passkey.make({
@@ -37,7 +38,7 @@ export class AppAuth extends Auth.Service<AppAuth>()("app/Auth", {
     }),
   },
   defaultStrategy: "password",
-}) {}
+});
 
 export const signIn = Effect.fn("app.signIn")(function* (email: string, password: string) {
   const auth = yield* AppAuth;
@@ -58,11 +59,31 @@ export const beginPasskey = Effect.fn("app.beginPasskey")(function* (
 Method inputs and results come from the selected strategy. Adding a method adds
 its required services to the Layer's type.
 
+`Auth.make` declares the service synchronously. Provide `AppAuth.layer` at the
+application boundary, or yield `AppAuth.make` to acquire an instance directly in
+your Scope. `Auth.Service<Self>()` is available when you prefer a class declaration.
+
+## Share an API with the browser
+
+Define claims and exposed actions with `AuthContract.make`, then bind that
+contract with `Auth.make(AuthApi, options)`. The same actions become local methods,
+HTTP endpoints, `client.auth` methods, and importable Effect atoms. Installing a
+strategy makes its methods available locally; only declared actions are exposed
+remotely. [Getting started](./getting-started) shows the shared contract.
+
+Both local and remote calls validate the declared schemas. Local calls resolve
+`Auth.AuthRequest` from Effect context when they run; a shared service never
+captures the current request. `auth.getSession()` reads its credential and returns
+a typed session or `null`. `auth.requireSession()` protects a handler, while
+`auth.signOut()` and `auth.renewSession()` deliver credential changes through the
+same boundary. See [sessions](./sessions) for outcomes and failure behavior.
+
 ## What goes where
 
 ```text
 src/
-├─ auth.ts             # claims and method selection
+├─ auth-contract.ts    # shared claims and exposed actions
+├─ auth.ts             # server methods and session selection
 ├─ auth-config.ts      # session policy, keys, allowed origins
 ├─ auth-persistence.ts # database mappings and transaction authority
 ├─ auth-accounts.ts    # account lookup, claims, provisioning
