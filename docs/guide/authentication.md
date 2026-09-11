@@ -18,65 +18,56 @@ your request handler
   → private cookie delivery
 ```
 
-## One service, named methods
+## One contract, named methods
 
-```ts [auth.ts]
-import { Effect, Schema } from "effect";
-import { Auth, Passkey, Password, Sessions } from "effect-auth";
+[`AuthContract.make`](./getting-started#define-the-shared-contract) declares the
+shared actions. Bind them to server methods with `Auth.make(AuthApi, options)`
+and to HTTP calls with `Client.make(AuthApi, options)`.
 
-export const AppAuth = Auth.make("app/Auth", {
-  claims: Schema.Struct({ displayName: Schema.String }),
-  sessions: Sessions.stateful(),
-  strategies: {
-    password: Password.make(),
-    passkey: Passkey.make({
-      relyingParty: {
-        id: "app.example.com",
-        name: "My app",
-        origins: ["https://app.example.com"],
-      },
-    }),
-  },
-  defaultStrategy: "password",
-});
+In an existing server Effect handler, with `AppAuth` provided:
 
-export const signIn = Effect.fn("app.signIn")(function* (email: string, password: string) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.signIn({ email, password });
-});
-
-export const beginPasskey = Effect.fn("app.beginPasskey")(function* (
-  flowId: string,
-  commandId: string,
-) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.signIn("passkey", { flowId, commandId, profileId: "default" });
-});
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const result = yield* auth.signIn({ email, password });
 ```
 
-Method inputs and results come from the selected strategy. Adding a method adds
-its required services to the Layer's type.
+In an existing client Effect, with `AppClient` provided:
+
+<!-- prettier-ignore -->
+```ts
+const client = yield* AppClient;
+const result = yield* client.auth.signIn({ email, password });
+```
+
+The inputs and public results come from the same contract. Local calls resolve
+`Auth.AuthRequest` when they run; the HTTP middleware supplies it. Remote calls
+use the named client's transport. Both preserve typed failures and validate the
+declared schemas.
+
+For reactive clients, `AuthAtom.make(AppClient)` supplies ready-to-use session
+queries and named mutation atoms. Your application composes them through its Atom
+registry and `auth.runtime`. A wrapper is useful when it adds application behavior,
+such as a multi-step workflow or a response projection; direct auth calls already
+return Effects.
+
+## Configure once, resolve each request
 
 `Auth.make` declares the service synchronously. Provide `AppAuth.layer` at the
-application boundary, or yield `AppAuth.make` to acquire an instance directly in
-your Scope. `Auth.Service<Self>()` is available when you prefer a class declaration.
+application boundary, or yield `AppAuth.make` to acquire an instance in your Scope.
+Keep request context out of the shared service Layer. `Auth.Service<Self>()` is
+available when you prefer a class declaration.
 
-## Share an API with the browser
+`auth.getSession()` reads the incoming credential and returns a typed session or
+`null`. `auth.requireSession()` requires authentication, while `auth.signOut()` and
+`auth.renewSession()` deliver credential changes through the same boundary.
+See [sessions](./sessions) for outcomes and failure behavior.
 
-Define claims and exposed actions with `AuthContract.make`, then bind that
-contract with `Auth.make(AuthApi, options)`. The same actions become local methods,
-HTTP endpoints, `client.auth` methods, and importable Effect atoms. Installing a
-strategy makes its methods available locally; only declared actions are exposed
-remotely. [Getting started](./getting-started) shows the shared contract.
-
-Both local and remote calls validate the declared schemas. Local calls resolve
-`Auth.AuthRequest` from Effect context when they run; a shared service never
-captures the current request. `auth.getSession()` reads its credential and returns
-a typed session or `null`. `auth.requireSession()` protects a handler, while
-`auth.signOut()` and `auth.renewSession()` deliver credential changes through the
-same boundary. See [sessions](./sessions) for outcomes and failure behavior.
+Installing a strategy makes its methods available locally; only declared actions
+are exposed remotely. Each strategy adds its service requirements to the Layer's
+type. [Getting started](./getting-started#add-another-method) shows local strategy
+selection, and the [HTTP guide](./http-and-client#compose-a-passkey-workflow) shows
+exposing another method through the shared contract.
 
 ## What goes where
 

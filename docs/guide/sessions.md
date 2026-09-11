@@ -43,19 +43,12 @@ namespace, generation to `1`, and the token limit to `4096` bytes. After reducin
 
 ## Read the current session
 
-```ts [current-session.ts]
-import { Effect } from "effect";
+Inside an existing Effect handler covered by `http.middleware`:
 
-import { AppAuth } from "./auth";
-
-export const currentSession = Effect.fn("app.currentSession")(function* () {
-  const auth = yield* AppAuth;
-  const session = yield* auth.getSession();
-
-  return session === null
-    ? null
-    : { subjectId: session.subjectId, name: session.claims.displayName };
-});
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const session = yield* auth.getSession();
 ```
 
 The method reads the incoming session credential from `Auth.AuthRequest`. Missing,
@@ -70,16 +63,12 @@ delivery requirements.
 
 ## Sign out
 
-```ts [sign-out.ts]
-import { Effect } from "effect";
+In the same request context, call the service directly:
 
-import { AppAuth } from "./auth";
-
-export const signOut = Effect.fn("app.signOut")(function* () {
-  const auth = yield* AppAuth;
-
-  return yield* auth.signOut();
-});
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const result = yield* auth.signOut();
 ```
 
 Sign-out reads the incoming credential without first verifying it and clears the
