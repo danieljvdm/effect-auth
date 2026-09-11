@@ -48,8 +48,10 @@ export const AuthRoutes = http.routes().pipe(Layer.provide(AppAuth.layer));
 <!-- #endregion auth-server -->
 
 Supply your persistence and account Layers to `AuthRoutes`, then merge it with
-your router. In an existing Effect handler covered by `http.middleware`, call the
-service directly:
+your router. For application routes that call auth, also provide `AppAuth.layer`
+and wrap them with `http.middleware`, as shown in the
+[router composition](docs/guide/http-and-client.md#configure-the-server).
+Inside an existing Effect handler, call the service directly:
 
 <!-- prettier-ignore -->
 ```ts

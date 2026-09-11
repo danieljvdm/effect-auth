@@ -6,6 +6,10 @@ description: Request an SMS code and sign in with a phone number.
 
 Use `PhoneOtp` to sign in existing accounts with an SMS code.
 
+The snippets below are local calls inside existing Effect request handlers, with
+`AppAuth` and the HTTP request boundary provided. Publish selected methods through
+a [shared contract](./http-and-client#expose-another-method) for browser clients.
+
 ## Enable phone sign-in
 
 ```ts [auth.ts]
@@ -32,16 +36,10 @@ and expires after five minutes. You can override `digits` and `policy`.
 
 ## Send a code
 
-```ts [request-code.ts]
-import { Effect } from "effect";
-
-import { AppAuth } from "./auth";
-
-export const sendCode = Effect.fn("app.sendCode")(function* (phoneNumber: string) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.signIn({ phoneNumber, locale: "en" });
-});
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const started = yield* auth.signIn({ phoneNumber, locale: "en" });
 ```
 
 Use an international number such as `+14155550123`. The result contains a `flowId`
@@ -50,36 +48,28 @@ your SMS service receives the code.
 
 ## Complete sign-in
 
-```ts [complete-phone.ts]
-import { Effect } from "effect";
-import type { ProofReference } from "effect-auth/Proofs";
+Use the original `flowId` and `reference`. The server resolves `requestBinding`
+from private request credentials. In a shared action, map it with
+`requestFields: { requestBinding: "request-binding" }`; the named server and client
+calls then take only the public fields.
 
-import { AppAuth } from "./auth";
-
-export const completePhone = Effect.fn("app.completePhone")(function* (
-  flowId: string,
-  phoneNumber: string,
-  requestBinding: string,
-  reference: typeof ProofReference.Encoded,
-  code: string,
-) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.completeSignIn({
-    flowId,
-    phoneNumber,
-    requestBinding,
-    reference,
-    code,
-  });
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const result = yield* auth.completeSignIn({
+  flowId,
+  phoneNumber,
+  requestBinding,
+  reference,
+  code,
 });
 ```
 
 ```text
-sendCode(number)
+signIn({ phoneNumber })
   → SMS + private request binder
   → user enters code
-  → completePhone(original flow, binder, reference, code)
+  → completeSignIn(original flow, binder, reference, code)
   → session or additional-factor result
 ```
 

@@ -7,8 +7,9 @@ service, cookies, selected routes, and protected HttpApi group. The runnable pas
 use local example data.
 
 `auth-contract.ts` owns the shared named API; `auth-server.ts` mounts it beside
-application routes. `auth-react.ts` shows the optional React provider and ordinary
-Atom hooks. `auth-ssr.ts` shows request-owned server rendering and browser hydration;
+application routes. `auth-client.ts` declares the client and its atoms;
+`auth-react.ts` uses the application's standard Atom registry and React hooks.
+`auth-ssr.ts` shows request-owned server rendering and browser hydration;
 the host keeps each Scope alive until its render or mounted application finishes.
 
 Run a declared example through `vp run -F @effect-auth/example-auth <task>`.

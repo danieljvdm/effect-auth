@@ -7,6 +7,10 @@ description: Configure GitHub OAuth, redirect to sign in, and complete the callb
 Configure a provider, start sign-in, and exchange the callback for an application
 session. This example uses a GitHub OAuth App.
 
+The calls below use the local service inside existing Effects. A browser client
+needs explicitly declared [shared actions](./http-and-client#expose-another-method),
+including a request-field mapping for the private request binder.
+
 ## Enable OAuth sign-in
 
 ```ts [auth.ts]
@@ -72,57 +76,43 @@ Register that exact callback URL in your GitHub OAuth App. The adapter requires
 
 ## Redirect to GitHub
 
-```ts [begin-oauth.ts]
-import { Effect } from "effect";
-
-import { AppAuth } from "./auth";
-
-export const beginOAuth = Effect.fn("app.beginOAuth")(function* (
-  flowId: string,
-  commandId: string,
-) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.signIn({
-    flowId,
-    commandId,
-    provider: "github",
-    callbackId: "github",
-    returnTarget: "/account",
-  });
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const started = yield* auth.signIn({
+  flowId,
+  commandId,
+  provider: "github",
+  callbackId: "github",
+  returnTarget: "/account",
 });
 ```
 
-Use the returned `authorizationUrl` for the redirect. It is redacted because it
-contains OAuth state. Persist the private request binder in the initiating client.
+Use `Redacted.value(started.authorizationUrl)` at the redirect boundary, with
+`Redacted` imported from `effect`. The URL is redacted because it contains OAuth
+state. Retain the public flow ID across navigation; deliver the private request
+binder through the HTTP cookie boundary.
 
 ## Complete the callback
 
-```ts [complete-oauth.ts]
-import { Effect } from "effect";
+Here `requestBinding` is the original private server credential. A shared action
+uses `requestFields: { requestBinding: "request-binding" }` so callers supply only
+the public callback fields.
 
-import { AppAuth } from "./auth";
-
-export const completeOAuth = Effect.fn("app.completeOAuth")(function* (
-  flowId: string,
-  requestBinding: string,
-  state: string,
-  code: string,
-) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.completeSignIn({
-    flowId,
-    requestBinding,
-    provider: "github",
-    callbackId: "github",
-    response: { _tag: "Code", state, code },
-  });
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const result = yield* auth.completeSignIn({
+  flowId,
+  requestBinding,
+  provider: "github",
+  callbackId: "github",
+  response: { _tag: "Code", state, code },
 });
 ```
 
 ```text
-beginOAuth → persist flow → redirect
+signIn → retain flow ID → redirect
   → GitHub callback + original binder
   → verify state / PKCE / provider identity
   → resolve your local account → issue session
@@ -130,6 +120,13 @@ beginOAuth → persist flow → redirect
 
 Handle provider denial through the `Error` callback variant. Do not retry an
 exchange after an unknown outcome. Start a new authorization flow instead.
+
+The provider redirect is a GET navigation, but completion is an auth mutation.
+With the standard HTTP adapter, the callback page submits the returned values
+through a same-origin protected POST from the initiating browser. A raw callback
+GET cannot call `completeSignIn` under `http.middleware` and bypass its Origin/CSRF
+checks. Keep callback values out of logs and clear them from the page URL after
+capturing them. Custom callback hosts must own an equivalent request boundary.
 
 ## Provide encryption and return routes
 

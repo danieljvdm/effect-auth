@@ -37,27 +37,22 @@ The [email guide](./codes) shows the proof-policy fields. Your application
 controls account creation and recovery delivery. For sign-in only, use
 `password: Password.make()` as in [getting started](./getting-started).
 
+This definition exposes local methods. The calls below belong inside an existing
+Effect request handler, with `AppAuth` provided and the HTTP request boundary in
+place. To expose methods to a browser, declare them in the
+[shared contract](./http-and-client#define-the-routes); enabling registration or
+reset support does not automatically publish those endpoints.
+
 ## Register an account
 
-```ts [register.ts]
-import { Effect } from "effect";
-
-import { AppAuth } from "./auth";
-
-export const register = Effect.fn("app.register")(function* (
-  requestId: string,
-  email: string,
-  newPassword: string,
-  displayName: string,
-) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.register({
-    requestId,
-    email,
-    newPassword,
-    registration: { displayName },
-  });
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const result = yield* auth.register({
+  requestId,
+  email,
+  newPassword,
+  registration: { displayName },
 });
 ```
 
@@ -66,17 +61,12 @@ Generate `requestId` once per submission and retain it for an exact retry.
 
 ## Handle a rejected sign-in
 
-```ts [sign-in.ts]
-import { Effect } from "effect";
+With `Effect` imported from `effect`, handle only the expected rejection:
 
-import { AppAuth } from "./auth";
-
-export const signIn = Effect.fn("app.signIn")(
-  function* (email: string, password: string) {
-    const auth = yield* AppAuth;
-
-    return yield* auth.signIn({ email, password });
-  },
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const result = yield* auth.signIn({ email, password }).pipe(
   Effect.catchTag("PasswordRejected", () =>
     Effect.succeed({ _tag: "InvalidCredentials" as const }),
   ),
@@ -90,20 +80,10 @@ must be completed before granting access.
 
 ## Change a password
 
-```ts [change-password.ts]
-import { Effect } from "effect";
-
-import { AppAuth } from "./auth";
-
-export const changePassword = Effect.fn("app.changePassword")(function* (
-  commandId: string,
-  currentPassword: string,
-  newPassword: string,
-) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.changePassword({ commandId, currentPassword, newPassword });
-});
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const result = yield* auth.changePassword({ commandId, currentPassword, newPassword });
 ```
 
 This call requires an authenticated `Auth.AuthRequest`. Applications requiring
