@@ -14,5 +14,5 @@ caller’s Scope; credentials stay outside public results and telemetry.
 Optional database, platform, browser, and OAuth adapters have separate exports.
 The root import does not load their peer dependencies. Effect is supplied by the host.
 
-See the [authentication guide](https://github.com/danieljvdm/effect-auth/blob/main/docs/guide/authentication.md)
-and [consumer examples](https://github.com/danieljvdm/effect-auth/tree/main/examples/auth).
+See the [authentication guide](https://github.com/yielded-dev/auth/blob/main/docs/guide/authentication.md)
+and [consumer examples](https://github.com/yielded-dev/auth/tree/main/examples/auth).

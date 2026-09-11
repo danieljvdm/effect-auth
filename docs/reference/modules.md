@@ -101,4 +101,4 @@ composition. Start with `Auth.make` for application authentication.
 | `Testing`                                                   | Test-only helpers; exclude from production imports. |
 
 API comments and signatures live beside the
-[public source modules](https://github.com/danieljvdm/effect-auth/tree/main/packages/effect-auth/src).
+[public source modules](https://github.com/yielded-dev/auth/tree/main/packages/effect-auth/src).

@@ -3,7 +3,7 @@
   "changelog": [
     "@changesets/changelog-github",
     {
-      "repo": "danieljvdm/effect-auth"
+      "repo": "yielded-dev/auth"
     }
   ],
   "commit": false,

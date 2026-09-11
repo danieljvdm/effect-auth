@@ -10,14 +10,14 @@
     "sessions",
     "typescript"
   ],
-  "homepage": "https://github.com/danieljvdm/effect-auth#readme",
+  "homepage": "https://github.com/yielded-dev/auth#readme",
   "bugs": {
-    "url": "https://github.com/danieljvdm/effect-auth/issues"
+    "url": "https://github.com/yielded-dev/auth/issues"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danieljvdm/effect-auth.git",
+    "url": "git+https://github.com/yielded-dev/auth.git",
     "directory": "packages/effect-auth"
   },
   "files": [

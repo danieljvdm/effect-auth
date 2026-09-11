@@ -69,7 +69,7 @@ Before enabling automated releases:
 1. Give the release GitHub App contents and pull-request write access to this repo.
 2. Configure `EFFECT_AUTH_APP_ID` and `EFFECT_AUTH_APP_PRIVATE_KEY` repository secrets.
 3. Configure npm trusted publishing for `@yielded/auth`, repository
-   `danieljvdm/effect-auth`, workflow `release.yml`. The first npm publication may
+   `yielded-dev/auth`, workflow `release.yml`. The first npm publication may
    require a manually authenticated owner before trusted publishing can be set.
    Enable direct `npm publish` for this trusted publisher; the release workflow
    does not use staged publishing.
