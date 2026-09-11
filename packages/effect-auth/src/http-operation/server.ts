@@ -47,7 +47,7 @@ const responseSchema = Schema.Union([
 const encodeResponse = Schema.encodeEffect(Schema.fromJsonString(responseSchema));
 const encodeCredential = Schema.encodeSync(Schema.fromJsonString(CredentialWire));
 
-export interface OAuthHttpCallback {
+export interface OAuthHttpCallback<R = never> {
   readonly route: AnyRoute;
   readonly path: string;
   readonly provider: string;
@@ -60,16 +60,25 @@ export interface OAuthHttpCallback {
   ) => Effect.Effect<string, OperationHttpError>;
   readonly allowedRedirectOrigins: ReadonlyArray<string>;
   readonly allowedQueryParameters?: ReadonlyArray<string>;
+  /** Named Auth actions read the private binder from AuthRequest themselves. */
+  readonly requestBinding?: "context";
+  /** Override the default returnTarget redirect using the schema-encoded result.
+   * Credential delivery and non-cacheable response headers remain host-owned. */
+  readonly respond?: (
+    value: Schema.Json | undefined,
+    input: { readonly flowId: string; readonly provider: string; readonly callbackId: string },
+  ) => Effect.Effect<Response, OperationHttpError, R>;
 }
 
-export const oauthCallback = <R extends AnyRoute>(
+export const oauthCallback = <R extends AnyRoute, ResponseR = never>(
   route: R,
-  options: Omit<OAuthHttpCallback, "route">,
-): OAuthHttpCallback & { readonly route: R } => {
+  options: Omit<OAuthHttpCallback<ResponseR>, "route">,
+): OAuthHttpCallback<ResponseR> & { readonly route: R } => {
   if (
     !options.path.startsWith("/") ||
     options.path.includes("?") ||
-    !Object.values(route.credentials).includes("request-binding") ||
+    (options.requestBinding !== "context" &&
+      !Object.values(route.credentials).includes("request-binding")) ||
     route.operation.replay !== "single-use"
   )
     throw OperationHttpConfigurationError.make({ reason: "callback" });
@@ -164,7 +173,7 @@ const failResponse = (error: OperationHttpError) =>
   ).pipe(Effect.orDie);
 
 const callbackPayload = Effect.fn("OperationHttp.callbackPayload")(function* (
-  callback: OAuthHttpCallback,
+  callback: OAuthHttpCallback<unknown>,
   request: Request,
   credentials: HttpCredentials,
   url: URL,
@@ -280,7 +289,7 @@ const applyCommands = Effect.fn("OperationHttp.applyCommands")(function* (
 
 export const make = <
   const Routes extends Readonly<Record<string, AnyRoute>>,
-  const Callbacks extends ReadonlyArray<OAuthHttpCallback> = readonly [],
+  const Callbacks extends ReadonlyArray<OAuthHttpCallback<unknown>> = readonly [],
 >(
   contract: { readonly routes: Routes },
   options?: { readonly callbacks?: Callbacks },
@@ -288,7 +297,8 @@ export const make = <
   Effect.gen(function* () {
     type DispatchRoute = Routes[keyof Routes] | Callbacks[number]["route"];
     type Requirements = Exclude<
-      RouteRequirements<DispatchRoute>,
+      | RouteRequirements<DispatchRoute>
+      | Effect.Services<ReturnType<NonNullable<Callbacks[number]["respond"]>>>,
       AuthRequest | AuthCredentialCommandCollector | AuthRevealCommandCollectorService | Scope.Scope
     >;
     const services = yield* Effect.context<Requirements>();
@@ -311,7 +321,7 @@ export const make = <
         return yield* OperationHttpConfigurationError.make({ reason: "route" });
     }
     const routes = new Map(Object.values(contract.routes).map((route) => [route.path, route]));
-    const callbacks = new Map<string, OAuthHttpCallback>();
+    const callbacks = new Map<string, Callbacks[number]>();
 
     for (const callback of options?.callbacks ?? []) {
       if (callbacks.has(callback.path) || routes.has(callback.path))
@@ -374,6 +384,9 @@ export const make = <
           request,
           callback === undefined ? (route.method === "GET" ? "read" : "operation") : "callback",
         );
+
+        if (callback !== undefined && security.credentials["request-binding"] === undefined)
+          return yield* OperationHttpError.make({ reason: "credentials" });
 
         const raw =
           callback === undefined && route.method === "GET"
@@ -488,8 +501,41 @@ export const make = <
                 Effect.mapError(() => OperationHttpError.make({ reason: "response" })),
               );
 
-        yield* applyCommands(headers, commands, config, security.native);
+        if (callback?.respond === undefined)
+          yield* applyCommands(headers, commands, config, security.native);
         if (callback !== undefined) {
+          if (callback.respond !== undefined) {
+            // The callback's exact response requirements are captured above.
+            const respond = callback.respond as NonNullable<
+              OAuthHttpCallback<Requirements>["respond"]
+            >;
+
+            const input = yield* Schema.decodeUnknownEffect(
+              Schema.Struct({ flowId: Schema.String }),
+            )(raw).pipe(Effect.mapError(() => OperationHttpError.make({ reason: "response" })));
+
+            const response = yield* respond(value, {
+              ...input,
+              provider: callback.provider,
+              callbackId: callback.callbackId,
+            }).pipe(Effect.provide(requestServices));
+
+            yield* applyCommands(headers, commands, config, security.native);
+
+            const customHeaders = new Headers(response.headers);
+
+            for (const name of [
+              "cache-control",
+              "pragma",
+              "referrer-policy",
+              "x-content-type-options",
+            ])
+              customHeaders.set(name, headers.get(name)!);
+            for (const cookie of headers.getSetCookie()) customHeaders.append("set-cookie", cookie);
+
+            return new Response(response.body, { status: response.status, headers: customHeaders });
+          }
+
           // oxlint-disable-next-line no-restricted-properties -- only the core-approved return target is projected from the callback result.
           const target = yield* Schema.decodeUnknownEffect(
             Schema.Struct({ returnTarget: Schema.String.check(Schema.isMaxLength(2048)) }),

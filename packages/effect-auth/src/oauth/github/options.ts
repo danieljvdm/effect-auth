@@ -2,12 +2,15 @@ import { Effect, Layer } from "effect";
 
 import { OAuthConnectedProtocol } from "../OAuthConnectedProtocol";
 import { OAuthProtocol } from "../OAuthProtocol";
-import { OpenIdClientConfigurationError } from "../openid-client/models";
+import type { OpenIdClientConfigurationError } from "../openid-client/models";
 import {
   resolveOptions,
   resolveRegistration,
   type RegistrationOptions,
 } from "../openid-client/options";
+import { makeOpenIdClientOAuthProtocol } from "../openid-client/protocol";
+import type { ProviderDefinition } from "../providerDefinition";
+import type { OAuthUnavailable } from "../signInErrors";
 import type {
   GitHubOAuthAppConnectedProtocolOptions,
   GitHubOAuthAppGeneration,
@@ -44,15 +47,30 @@ const registration = (input: Registration): GitHubOAuthAppGeneration => ({
   ...resolveRegistration(input, "github"),
 });
 
-/** Configure GitHub alongside other hosts in OpenIdClient.layer. Performs no I/O;
- * invalid input throws OpenIdClientConfigurationError without retaining secrets. */
-export const provider = (input: Registration) => {
-  try {
-    return gitHubOAuthAppProvider(registration(input));
-  } catch {
-    throw OpenIdClientConfigurationError.make({ reason: "provider" });
-  }
-};
+export type ProviderRegistration = Pick<GitHubOAuthAppGeneration, "clientId" | "clientSecret"> &
+  Pick<RegistrationOptions, "configurationGeneration" | "issuance">;
+
+export type ProviderOptions = Transport &
+  (ProviderRegistration | { readonly registrations: ReadonlyArray<ProviderRegistration> });
+
+/** Declare GitHub for AuthHttp.layer. The host supplies its provider key and
+ * callback destinations. Retired registrations remain available to finish flows. */
+export const provider = (
+  options: ProviderOptions,
+): ProviderDefinition<OpenIdClientConfigurationError | OAuthUnavailable> => ({
+  configure: (binding) =>
+    resolveOptions(() => ({
+      providers: ("registrations" in options ? options.registrations : [options]).map((input) => ({
+        ...gitHubOAuthAppProvider({
+          ...input,
+          ...resolveRegistration({ ...input, callbacks: binding.callbacks }, binding.provider),
+        }),
+        provider: binding.provider,
+      })),
+      timeoutSeconds: options.timeoutSeconds ?? 10,
+      ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    })).pipe(Effect.flatMap(makeOpenIdClientOAuthProtocol)),
+});
 
 /** GitHub OAuth sign-in. Defaults to callback ID github, generation 1, active
  * issuance and a 10-second request timeout. Does not install HTTP routes.

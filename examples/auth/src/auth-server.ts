@@ -25,7 +25,7 @@ export const Routes = HttpApiBuilder.layer(AppApi, { openapiPath: "/openapi.json
 );
 
 // For a raw HttpRouter, merge this Layer with the application's route Layers.
-export const AuthRoutes = http.routes().pipe(Layer.provide(AppAuth.layer));
+export const AuthRoutes = AuthHttp.layer(AppAuth, { origin: "https://app.example.com" });
 
 // In an application route covered by http.middleware, these local methods use
 // AuthRequest from Effect context. Calling them does not make an HTTP request.

@@ -1,4 +1,5 @@
-export { make, type AuthHttpOptions } from "./http/auth-http";
+export { layer, make, type AuthHttpOptions } from "./http/auth-http";
+export type { OAuthOptions, OAuthCallbackOptions } from "./http/oauth";
 
 export { AuthApi } from "./http/auth-api";
 

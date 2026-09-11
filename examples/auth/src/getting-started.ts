@@ -41,7 +41,9 @@ export const makeApplicationAuth = (configuration: {
 
   const http = AuthHttp.make(AppAuth, { origin: configuration.origin });
 
-  const AuthRoutes = http.routes();
+  const AuthRoutes = AuthHttp.layer(AppAuth, { origin: configuration.origin }).pipe(
+    Layer.provide(Auth.RequestBindingConfig.layer(configuration.requestBinding)),
+  );
 
   // Application code contains its own projection; auth owns request and cookie mechanics.
   const currentMember = Effect.fn("app.currentMember")(function* () {
@@ -60,7 +62,7 @@ export const makeApplicationAuth = (configuration: {
   // Application composition:
   // const AuthDependenciesLive = Layer.mergeAll(PersistenceLive, AccountsLive, SmsLive);
   // const AppLive = AuthRoutes.pipe(
-  //   Layer.provide(AuthLive.pipe(Layer.provide(AuthDependenciesLive))),
+  //   Layer.provide(AuthDependenciesLive),
   // );
   // AccountsLive implements AppAuth.strategies.password.ClaimsForPassword,
   // AppAuth.strategies.passkey.ClaimsForPasskey, AppAuth.strategies.phone.ClaimsForPhone

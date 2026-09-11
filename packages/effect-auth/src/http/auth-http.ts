@@ -1,5 +1,5 @@
 import {
-  type Schema,
+  Schema,
   Context,
   type Types,
   type Unify,
@@ -34,6 +34,8 @@ import {
 } from "../http-operation/OperationHttpServerConfig";
 import { mutationSecurity, requestSecurity } from "../http-operation/security";
 import { make as makeOperationServer } from "../http-operation/server";
+import type { OAuthProtocol } from "../oauth/OAuthProtocol";
+import type { ProviderDefinition } from "../oauth/providerDefinition";
 import type { ActionSuccess, AuthActions } from "../operations/actions";
 import { guest } from "../operations/context";
 import {
@@ -41,12 +43,15 @@ import {
   AuthCredentialCommandCollector,
   AuthRevealCommandCollectorService,
 } from "../operations/credentials";
+import type { RequestBindingConfigurationError } from "../operations/requestBinding";
+import type { RequestBindingConfig } from "../operations/RequestBindingConfig";
 import type { SessionMetadata } from "../sessions/models";
 import { httpGroup, matchesEndpoint } from "./auth-contract";
+import { makeOAuth, type OAuthOptions } from "./oauth";
 import type { makeSessionHttpContract } from "./session-contract";
 
 /** Browser transport policy. Insecure cookies require an explicit development override. */
-export interface AuthHttpOptions {
+export interface AuthHttpOptions<E = never, R = never, ResponseR = never> {
   readonly origin: string;
   readonly maximumBodyBytes?: number;
   readonly maximumUrlBytes?: number;
@@ -57,9 +62,76 @@ export interface AuthHttpOptions {
     readonly sameSite?: "lax" | "strict";
   };
   readonly csrf?: { readonly header: string; readonly value: string };
+  readonly oauth?: OAuthOptions<E, R, ResponseR>;
 }
 
-/** Bind an Auth definition to shared browser actions and neutral request middleware.
+type OAuthConfiguration<O> = O extends { readonly oauth?: infer C } ? Exclude<C, undefined> : never;
+type ProviderError<O> = [OAuthConfiguration<O>] extends [never]
+  ? never
+  : OAuthConfiguration<O> extends {
+        readonly providers: Readonly<Record<string, ProviderDefinition<infer E, unknown>>>;
+      }
+    ? E
+    : never;
+type ProviderServices<O> = [OAuthConfiguration<O>] extends [never]
+  ? never
+  : OAuthConfiguration<O> extends {
+        readonly providers: Readonly<Record<string, ProviderDefinition<unknown, infer R>>>;
+      }
+    ? R
+    : never;
+type ResponseFunctionServices<F> = F extends (
+  ...args: never[]
+) => Effect.Effect<unknown, unknown, infer R>
+  ? R
+  : never;
+type ResponseRequirement<C> =
+  C extends ReadonlyArray<infer Entry>
+    ? ResponseRequirement<Entry>
+    : C extends { readonly respond?: infer F }
+      ? ResponseFunctionServices<Exclude<F, undefined>>
+      : never;
+type CallbackServices<C> = C extends { readonly callbacks?: infer Callbacks }
+  ? ResponseRequirement<NonNullable<Callbacks>[keyof NonNullable<Callbacks>]>
+  : never;
+type ResponseServices<O> =
+  | ResponseRequirement<OAuthConfiguration<O>>
+  | CallbackServices<OAuthConfiguration<O>>;
+type ResponseRequirements<O> = Exclude<
+  ResponseServices<O>,
+  AuthRequest | AuthCredentialCommandCollector | AuthRevealCommandCollectorService | Scope.Scope
+>;
+type OAuthConfigured<O, A> = [OAuthConfiguration<O>] extends [never] ? never : A;
+type OAuthProvided<O> = O extends { readonly oauth: OAuthOptions<unknown, unknown, unknown> }
+  ? OAuthProtocol
+  : never;
+
+/** Mount the shared auth actions and OAuth callbacks with their configured services.
+ * Supply application-owned persistence and account services through Layer.provide.
+ */
+export const layer = <
+  I,
+  S extends SessionMetadata,
+  RE,
+  Api extends SessionApi<S, unknown>,
+  Actions extends AuthActions,
+  AE,
+  AR,
+  const Options extends AuthHttpOptions<unknown, unknown, unknown>,
+>(
+  auth: Omit<Context.Key<I, Api>, typeof Unify.unifySymbol> & {
+    readonly sessions: { readonly Session: Schema.Codec<S, unknown, unknown, RE> };
+    readonly contract: { readonly basePath?: string; readonly actions: Actions };
+    readonly layer: Layer.Layer<I, AE, AR>;
+  },
+  options: Options,
+) => {
+  const http = make(auth, options);
+
+  return http.routes().pipe(Layer.provide(http.layer));
+};
+
+/** Build handlers and middleware for custom HTTP composition. Use layer for standalone mounting.
  * Mutation admission checks Origin and CSRF before effects. Generated operation
  * handlers independently require JSON; custom protected workflows choose their encoding.
  * The application owns session policy, persistence and profile lookup.
@@ -70,13 +142,40 @@ export const make = <
   RE,
   Api extends SessionApi<S, unknown>,
   Actions extends AuthActions,
+  AE,
+  AR,
+  const Options extends AuthHttpOptions<unknown, unknown, unknown>,
 >(
   auth: Omit<Context.Key<I, Api>, typeof Unify.unifySymbol> & {
     readonly sessions: { readonly Session: Schema.Codec<S, unknown, unknown, RE> };
-    readonly contract: { readonly actions: Actions };
+    readonly contract: { readonly basePath?: string; readonly actions: Actions };
+    readonly layer: Layer.Layer<I, AE, AR>;
   },
-  options: AuthHttpOptions,
+  options: Options,
 ) => {
+  // The conditional types retain the concrete declarations' errors and services.
+  const oauth =
+    options.oauth === undefined
+      ? undefined
+      : makeOAuth<ProviderError<Options>, ProviderServices<Options>, ResponseServices<Options>>(
+          options.oauth as OAuthOptions<
+            ProviderError<Options>,
+            ProviderServices<Options>,
+            ResponseServices<Options>
+          >,
+          options.origin,
+          auth.contract.basePath ?? "/auth",
+          auth.contract.actions,
+        );
+
+  const layer = (
+    oauth === undefined ? auth.layer : auth.layer.pipe(Layer.provideMerge(oauth.layer))
+  ) as Layer.Layer<
+    I | OAuthProvided<Options>,
+    AE | ProviderError<Options> | OAuthConfigured<Options, OperationHttpConfigurationError>,
+    Exclude<AR, OAuthProvided<Options>> | Exclude<ProviderServices<Options>, Scope.Scope>
+  >;
+
   const secure = options.cookie?.secure ?? true;
 
   const cookies = cookieConfiguration({
@@ -376,9 +475,26 @@ export const make = <
       }),
     );
 
-    return makeOperationServer({ routes: table }).pipe(
-      Effect.provide([configuration, requestInvocation]),
-    );
+    const server = Effect.gen(function* () {
+      const responseServices = yield* Effect.context<ResponseRequirements<Options>>();
+      const callbacks = oauth === undefined ? [] : yield* oauth.callbacks(table);
+
+      const server = yield* makeOperationServer({ routes: table }, { callbacks }).pipe(
+        Effect.provide(responseServices),
+      );
+
+      return { ...server, callbackPaths: callbacks.map((callback) => callback.path) };
+    }).pipe(Effect.provide([configuration, requestInvocation]));
+
+    // Binding configuration is acquired only by the configured OAuth branch.
+    return server as Effect.Effect<
+      Effect.Success<typeof server>,
+      | Exclude<Effect.Error<typeof server>, RequestBindingConfigurationError>
+      | OAuthConfigured<Options, RequestBindingConfigurationError>,
+      | Exclude<Effect.Services<typeof server>, RequestBindingConfig>
+      | ResponseRequirements<Options>
+      | OAuthConfigured<Options, RequestBindingConfig>
+    >;
   };
 
   /** Implement the AuthContract.httpGroup mounted in the consumer's HttpApi.
@@ -456,12 +572,58 @@ export const make = <
     );
   };
 
-  /** Standalone mounting uses the same generated HttpApi group and handlers. */
+  /** Unprovided routes for custom service composition. layer(auth, options) supplies
+   * the configured auth and OAuth services automatically. */
   const routes = () => {
     const api = HttpApi.make(`${auth.key}/http`).add(httpGroup(auth.contract));
 
-    return HttpApiBuilder.layer(api).pipe(Layer.provide(handlers(api)));
+    return Layer.merge(
+      HttpApiBuilder.layer(api).pipe(Layer.provide(handlers(api))),
+      callbackRoutes(),
+    );
   };
 
-  return { routes, handlers, middleware, withRequest, operationLayer, securityLayer, protect };
+  /** Mount these alongside handlers(api) when composing an existing HttpApi.
+   * routes() already includes them. Callback GETs use state/binding admission. */
+  const callbackRoutes = () =>
+    Layer.unwrap(
+      Effect.gen(function* () {
+        const server = yield* makeServer();
+
+        return HttpRouter.addAll(
+          server.callbackPaths.map((path) =>
+            HttpRouter.route(
+              "GET",
+              Schema.decodeUnknownSync(Schema.TemplateLiteral(["/", Schema.String]))(path),
+              Effect.gen(function* () {
+                const request = yield* HttpServerRequest.toWeb(
+                  yield* HttpServerRequest.HttpServerRequest,
+                ).pipe(Effect.orDie);
+
+                return HttpServerResponse.fromWeb(yield* server.handle(request));
+              }),
+            ),
+          ),
+        );
+      }),
+    );
+
+  return {
+    routes,
+    handlers,
+    layer,
+    callbackRoutes,
+    oauth: {
+      callbackUrl: (provider: string, callbackId?: string) => {
+        if (oauth === undefined) throw OperationHttpConfigurationError.make({ reason: "callback" });
+
+        return oauth.callbackUrl(provider, callbackId);
+      },
+    },
+    middleware,
+    withRequest,
+    operationLayer,
+    securityLayer,
+    protect,
+  };
 };

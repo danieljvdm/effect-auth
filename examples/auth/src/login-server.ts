@@ -3,7 +3,7 @@ import * as GitHub from "@yielded/auth/GitHub";
 import * as AuthHttp from "@yielded/auth/Http";
 import * as OpenIdClient from "@yielded/auth/OpenIdClient";
 import type { SessionSigningKeyring } from "@yielded/auth/Sessions";
-import { Config, Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
 
 import { LoginApi, Registration } from "./login-contract";
@@ -41,40 +41,6 @@ export const makeAppAuth = (email: Email.EmailCodeOptions) =>
 // Set this to the actual trusted HTTPS origin, not a caller-controlled Host header.
 const origin = "https://app.example.com";
 
-export const providersLayer = (includeGoogle: boolean) =>
-  Layer.unwrap(
-    Effect.gen(function* () {
-      const githubId = yield* Config.string("GITHUB_CLIENT_ID");
-      const githubSecret = yield* Config.redacted("GITHUB_CLIENT_SECRET");
-
-      const github: GitHub.Registration = {
-        clientId: githubId,
-        clientSecret: githubSecret,
-        redirectUri: `${origin}/auth/github/callback`,
-      };
-
-      if (!includeGoogle) return GitHub.layer(github);
-
-      const googleId = yield* Config.string("GOOGLE_CLIENT_ID");
-      const googleSecret = yield* Config.redacted("GOOGLE_CLIENT_SECRET");
-
-      return OpenIdClient.layer({
-        providers: [
-          GitHub.provider(github),
-          {
-            provider: "google",
-            protocol: "oidc",
-            issuer: "https://accounts.google.com",
-            clientId: googleId,
-            clientSecret: googleSecret,
-            tokenEndpointAuthMethod: "client_secret_post",
-            redirectUri: `${origin}/auth/google/callback`,
-          },
-        ],
-      });
-    }),
-  );
-
 /** Construct once at the application's composition root. Supply durable Email
  * and OAuth registration authorities, ProofPersistence/abuse budgets, shared
  * session persistence/AuthenticationAuthority, ClaimsForEmail/ClaimsForOAuth,
@@ -85,10 +51,44 @@ export const makeServer = (config: {
   readonly email: Email.EmailCodeOptions;
   readonly binding: SessionSigningKeyring;
   readonly transactions: OAuth.OAuthTransactionKeyring;
-  readonly google?: boolean;
+  readonly github: GitHub.ProviderOptions;
+  readonly google?: Pick<GitHub.ProviderRegistration, "clientId" | "clientSecret">;
 }) => {
   const AppAuth = makeAppAuth(config.email);
-  const http = AuthHttp.make(AppAuth, { origin });
+
+  const http = AuthHttp.make(AppAuth, {
+    origin,
+    oauth: {
+      providers: {
+        github: GitHub.provider(config.github),
+        ...(config.google === undefined
+          ? {}
+          : {
+              google: OpenIdClient.provider({
+                protocol: "oidc",
+                issuer: "https://accounts.google.com",
+                tokenEndpointAuthMethod: "client_secret_post",
+                ...config.google,
+              }),
+            }),
+      },
+      // Registration UI belongs to the app. Only public correlation enters this
+      // URL; the registration credential and request binder stay in HttpOnly cookies.
+      respond: (value, { flowId }) =>
+        Effect.gen(function* () {
+          const result = yield* Schema.decodeUnknownEffect(
+            LoginApi.actions.completeSignIn.route.operation.rpc.successSchema,
+          )(value).pipe(Effect.orDie);
+
+          const target =
+            "_tag" in result && result._tag === "RegistrationRequired"
+              ? `/register?${new URLSearchParams({ flowId, reference: result.reference })}`
+              : result.returnTarget;
+
+          return new Response(null, { status: 303, headers: { location: target } });
+        }),
+    },
+  });
 
   const ApplicationRoutes = HttpRouter.add(
     "GET",
@@ -105,10 +105,9 @@ export const makeServer = (config: {
   );
 
   const Routes = Layer.mergeAll(http.routes(), ApplicationRoutes.pipe(http.middleware)).pipe(
-    Layer.provide(AppAuth.layer),
+    Layer.provide(http.layer),
     Layer.provide(
       Layer.mergeAll(
-        providersLayer(config.google ?? false),
         Auth.RequestBindingConfig.layer({
           generation: 1,
           lifetimeMillis: 600_000,

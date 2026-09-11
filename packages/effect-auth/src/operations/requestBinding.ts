@@ -81,11 +81,70 @@ export interface BindingModule<Id extends string, Purpose extends string> {
   readonly purpose: Purpose;
 }
 
+const makeBindingCodec = Effect.fn("RequestBinding.makeCodec")(function* (
+  configuration: RequestBindingConfiguration,
+) {
+  const policy = yield* Schema.decodeEffect(configurationSchema)(configuration).pipe(
+    Effect.mapError(() => RequestBindingConfigurationError.make({})),
+  );
+
+  const signer = yield* makeSessionSigningCodec(envelope, policy.keyring, 2048).pipe(
+    Effect.mapError(() => RequestBindingConfigurationError.make({})),
+  );
+
+  const read = Effect.fn("RequestBinding.read")(function* (credential: Redacted.Redacted<string>) {
+    const value = yield* signer
+      .decode(credential)
+      .pipe(
+        Effect.mapError((error) =>
+          error._tag === "SessionUnavailable"
+            ? RequestBindingUnavailable.make({})
+            : RequestBindingInvalid.make({}),
+        ),
+      );
+
+    const now = DateTime.toEpochMillis(yield* DateTime.now);
+
+    if (
+      value.generation !== policy.generation ||
+      value.issuedAtMillis > now ||
+      value.expiresAtMillis <= now ||
+      value.expiresAtMillis <= value.issuedAtMillis ||
+      value.expiresAtMillis - value.issuedAtMillis > policy.lifetimeMillis
+    )
+      return yield* RequestBindingInvalid.make({});
+
+    return value;
+  });
+
+  return { policy, signer, read };
+});
+
+/** Recover correlation from a verified private credential. This is not flow
+ * authorization: the operation still verifies module, purpose, state and binding
+ * against the durable flow before any exchange. No new browser storage is needed. */
+export const makeRequestBindingFlowResolver = Effect.fn("RequestBinding.makeFlowResolver")(
+  function* (purpose: string) {
+    const { read } = yield* makeBindingCodec(yield* RequestBindingConfig);
+
+    return Effect.fn("RequestBinding.resolveFlow")(function* (
+      credential: Redacted.Redacted<string>,
+    ) {
+      const value = yield* read(credential);
+
+      if (value.purpose !== purpose) return yield* RequestBindingInvalid.make({});
+
+      return value.flowId;
+    });
+  },
+);
+
 /** The scalar private slot supports one standard browser flow at a time. Native
  * consumers may explicitly retain credentials by flow in their own secure store.
  * Browser adapters inject this credential from private storage and reject URL/body
  * overrides. Every binding-bearing mutation, including issuance, requires CSRF
- * protection. GET/preview routes neither begin nor consume an authentication flow.
+ * protection. Explicit OAuth callbacks admit completion through state and binding
+ * verification; ordinary GET/preview routes cannot mutate an authentication flow.
  */
 export const makeRequestBinding = <const Id extends string, const Purpose extends string>(
   moduleId: Id,
@@ -136,13 +195,7 @@ export const makeRequestBinding = <const Id extends string, const Purpose extend
           Effect.mapError(() => RequestBindingConfigurationError.make({})),
         );
 
-        const policy = yield* Schema.decodeEffect(configurationSchema)(input).pipe(
-          Effect.mapError(() => RequestBindingConfigurationError.make({})),
-        );
-
-        const signer = yield* makeSessionSigningCodec(envelope, policy.keyring, 2048).pipe(
-          Effect.mapError(() => RequestBindingConfigurationError.make({})),
-        );
+        const { policy, signer, read } = yield* makeBindingCodec(input);
 
         const crypto = yield* Crypto.Crypto;
 
@@ -184,28 +237,9 @@ export const makeRequestBinding = <const Id extends string, const Purpose extend
               Effect.mapError(() => RequestBindingInvalid.make({})),
             );
 
-            const value = yield* signer
-              .decode(credential)
-              .pipe(
-                Effect.mapError((error) =>
-                  error._tag === "SessionUnavailable"
-                    ? RequestBindingUnavailable.make({})
-                    : RequestBindingInvalid.make({}),
-                ),
-              );
+            const value = yield* read(credential);
 
-            const now = DateTime.toEpochMillis(yield* DateTime.now);
-
-            if (
-              value.moduleId !== moduleId ||
-              value.purpose !== purpose ||
-              value.flowId !== flowId ||
-              value.generation !== policy.generation ||
-              value.issuedAtMillis > now ||
-              value.expiresAtMillis <= now ||
-              value.expiresAtMillis <= value.issuedAtMillis ||
-              value.expiresAtMillis - value.issuedAtMillis > policy.lifetimeMillis
-            )
+            if (value.moduleId !== moduleId || value.purpose !== purpose || value.flowId !== flowId)
               return yield* RequestBindingInvalid.make({});
 
             const message = yield* Schema.encodeEffect(verifierMessage)([

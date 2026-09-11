@@ -147,7 +147,7 @@ export const TotpApi = AuthContract.make("app/Auth", {
 
 In the server definition above, replace `"app/Auth"` with `TotpApi` and remove
 `claims`, which now belongs to the contract. Keep the same strategies and custom
-session Layer. Mount it with `AuthHttp.make(AppAuth, options)` as in the
+session Layer. Mount it with `AuthHttp.layer(AppAuth, options)` as in the
 [HTTP guide](./http-and-client#configure-the-server).
 
 The named methods select the TOTP strategy and inject the pending cookie, so the

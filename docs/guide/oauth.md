@@ -9,12 +9,28 @@ Set up the auth service once, then add [GitHub](./github), [Google](./google), o
 
 ## Enable sign-in
 
-```ts [auth.ts]
-import { Schema } from "effect";
-import { Auth, OAuth, Sessions } from "@yielded/auth";
+Declare the shared actions:
 
-export const AppAuth = Auth.make("app/Auth", {
+```ts [auth-contract.ts]
+import { Schema } from "effect";
+import * as AuthContract from "@yielded/auth/AuthContract";
+
+export const AuthApi = AuthContract.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
+  actions: (sessions) => ({
+    signIn: AuthContract.oauthSignIn(),
+    completeSignIn: AuthContract.oauthCompleteSignIn(sessions),
+  }),
+});
+```
+
+Bind your auth service:
+
+```ts [auth.ts]
+import { Auth, OAuth, Sessions } from "@yielded/auth";
+import { AuthApi } from "./auth-contract";
+
+export const AppAuth = Auth.make(AuthApi, {
   sessions: Sessions.stateful(),
   strategies: {
     social: OAuth.make({
@@ -37,18 +53,16 @@ account provisioning service.
 
 ## Supply the services
 
-Provide your provider Layer, transaction encryption, and allowed return routes:
+Provide services to the Layer from your provider setup page:
 
 ```ts [oauth-live.ts]
 import { Layer } from "effect";
 import { OAuthReturnTargets, OAuthTransactionProtector } from "@yielded/auth/OAuth";
 
-import { AppAuth } from "./auth";
 import { transactionKeys } from "./auth-config";
-import { GitHubLive } from "./github";
+import { AuthRoutes } from "./github";
 
-export const OAuthLive = AppAuth.layer.pipe(
-  Layer.provide(GitHubLive),
+export const Routes = AuthRoutes.pipe(
   Layer.provide(OAuthTransactionProtector.xchacha20poly1305(transactionKeys)),
   Layer.provide(OAuthReturnTargets.exactRoutes(["/account"])),
 );
@@ -58,42 +72,58 @@ Use a dedicated encryption keyring. Supply the remaining account lookup, claims,
 [OAuth persistence](../reference/adapters#oauth), session, and
 `Auth.RequestBindingConfig` Layers from your application.
 
-For browser access, declare `signIn` and `completeSignIn` as shared actions and
-mount them with [the HTTP adapter](./http-and-client#expose-another-method).
-Map `requestBinding` to `"request-binding"` on completion so the server reads the
-private binding from its cookie. The [shared contract](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-contract.ts)
-and [server example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-server.ts)
-show the full wiring.
+`AuthHttp.layer` wires `AppAuth` and its providers, action handlers, and callbacks.
+Merge it with your application route Layers.
 
 ## Complete the callback
 
-After the provider redirects back, submit its response and the saved flow ID to
-`completeSignIn`. This is the local server call; shared actions inject
-`requestBinding` automatically.
+`AuthHttp.layer` serves each callback and completes sign-in. It recovers the flow ID
+from the verified HttpOnly binding cookie, validates the provider response, and
+redirects to the flow's approved `returnTarget`. No browser callback page is needed.
 
-<!-- prettier-ignore -->
+The default path is `/auth/{provider}/callback`; a custom contract `basePath`
+replaces `/auth`. Register the exact URL with the provider. After an uncertain
+exchange, start a fresh sign-in instead of retrying the code.
+
+## Customize callbacks
+
+Override a path in your HTTP configuration:
+
 ```ts
-const auth = yield* AppAuth;
-const result = yield* auth.completeSignIn({
-  flowId,
-  requestBinding,
-  provider: "github",
-  callbackId: "github",
-  response: { _tag: "Code", state, code, issuer },
+const AuthRoutes = AuthHttp.layer(AppAuth, {
+  origin,
+  oauth: {
+    providers,
+    callbacks: {
+      github: { path: "/login/github/return" },
+    },
+  },
 });
+
+// Callback: https://app.example.com/login/github/return
 ```
 
-Use the provider and callback ID that started the flow. `requestBinding` is the
-original private credential, and `issuer` comes from the callback's `iss` parameter.
-GitHub requires `https://github.com/login/oauth`; never rewrite the returned issuer.
-Handle provider denial with the `Error` response variant.
+For several destinations, use an array of `{ callbackId, path }` entries. Pass the
+chosen `callbackId` when starting sign-in. Callback paths must be unique.
 
-The callback GET serves a public page. That page completes sign-in through a
-same-origin protected POST; the GET itself must not exchange the code. Keep callback
-values out of logs and clear them from the page URL after reading them. The
-[browser example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-client.ts)
-handles parsing and dispatch. After an uncertain exchange, start a fresh sign-in
-instead of retrying the code.
+Use `oauth.respond` to render registration or MFA, or choose a different response.
+It receives the schema-encoded public result and `{ flowId, provider, callbackId }`,
+and returns an `Effect<Response, OperationHttpError, R>`. Decode the result with
+your completion action's success schema. Cookies remain managed by the HTTP adapter.
+A provider's callback entry may override `respond`; see the
+[registration example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-server.ts).
+
+`oauthCompleteSignIn` identifies the completion action. For a custom action,
+set `oauthCallback: true` and retain its single-use replay and private request-binding
+mapping. Use `oauth.complete` to select an action when more than one is declared.
+
+For application-owned callback handling, use `GitHub.layer` or `OpenIdClient.layer`
+with an explicit `redirectUri` and complete through your protected transport.
+
+For custom HttpApi composition, `AuthHttp.make(AppAuth, options)` exposes
+`handlers(api)`, `callbackRoutes()`, and middleware. Merge the callback routes
+alongside your API and provide `http.layer` to share the configured auth service
+and providers. `http.oauth.callbackUrl(provider)` returns the registered URL.
 
 ## Use the authenticated provider profile
 
@@ -162,29 +192,29 @@ account authorization; refresh does not promise to update that snapshot.
 
 ## Combine providers
 
-Use one `OpenIdClient.layer` for all hosts. Separate provider Layers would replace
-the same service.
+Add providers to the same HTTP configuration:
 
-```ts [providers.ts]
-import * as GitHub from "@yielded/auth/GitHub";
-import * as OpenIdClient from "@yielded/auth/OpenIdClient";
-
-import { github, google } from "./auth-config";
-
-export const ProvidersLive = OpenIdClient.layer({
-  providers: [GitHub.provider(github), google],
+```ts
+const AuthRoutes = AuthHttp.layer(AppAuth, {
+  origin,
+  oauth: {
+    providers: {
+      github: GitHub.provider(github),
+      google: OpenIdClient.provider(google),
+    },
+  },
 });
 ```
 
-Here `github` contains the options passed to `GitHub.layer`, and `google` contains
-the provider entry passed to `OpenIdClient.layer` on their setup pages.
+Each map key names the provider and its default callback. Multiple entries may
+use the same issuer with different client registrations.
 
 ## Other providers
 
-Use `OpenIdClient.layer` for other OAuth and OpenID Connect hosts. The
-[Google example](./google#configure-the-provider) shows an OIDC entry: set your
-provider key, issuer, credentials, and callback URL. Discovery verifies the host's
-capabilities.
+Use `OpenIdClient.provider` for other OAuth and OpenID Connect hosts. The
+[Google example](./google#configure-the-provider) shows an OIDC entry: supply the
+issuer and credentials. Discovery verifies the host's capabilities; HTTP supplies
+the provider key and callback URL.
 
 For plain OAuth, set `protocol: "oauth"` and provide `authorizationEndpoint`,
 `tokenEndpoint`, `identitySource.url`, and `identitySource.decodeIdentity`.
@@ -204,7 +234,6 @@ Set any required `scopes` explicitly.
 | OIDC `scopes` / signature algorithm | `["openid"]` / RS256           |
 | Plain OAuth `scopes`                | `[]`                           |
 
-Use `callbacks` instead of `redirectUri` for several named destinations.
 Secrets must be redacted; load them with `Config.redacted` or wrap validated server
 configuration with `Redacted.make`.
 
@@ -220,9 +249,10 @@ When credentials or protocol settings change, assign a new
 `configurationGeneration`. Retain the old entry with `issuance: "retired"` until
 its outstanding flows expire. Keep exactly one active generation per provider.
 
-Pass the entries in `GitHub.layer({ registrations: [...] })` or the
-`OpenIdClient.layer` provider list. The default generation `1` does not track
-credential changes automatically.
+Pass the entries in `GitHub.provider({ registrations: [...] })` or
+`OpenIdClient.provider({ registrations: [...] })`. The default generation `1`
+does not track credential changes automatically. Keep old callback paths mounted
+until their flows expire; select a new callback ID when changing a destination.
 
 ## Accounts and API access
 
