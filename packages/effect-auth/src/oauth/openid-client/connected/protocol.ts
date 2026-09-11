@@ -23,6 +23,7 @@ import {
 } from "../compatibility";
 import { clientAuthentication } from "../configuration";
 import { type OpenIdClientConfigurationError } from "../models";
+import { decodeOidcProfile } from "../profile";
 import { ProviderRevocation } from "../ProviderRevocation";
 import { boundedFetch } from "../transport";
 import {
@@ -372,8 +373,11 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
     )
       return yield* unavailable();
 
+    const profile = yield* decodeOidcProfile(raw).pipe(Effect.mapError(unavailable));
+
     return {
       identity: { provider: provider.provider, issuer: provider.issuer, subject: claims.sub },
+      ...(profile === undefined ? {} : { profile }),
       continuation: previous?.continuation ?? {
         _tag: "Oidc" as const,
         clientId: provider.clientId,

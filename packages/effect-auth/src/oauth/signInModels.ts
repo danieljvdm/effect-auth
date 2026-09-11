@@ -127,10 +127,28 @@ export const OAuthExternalIdentity = Schema.Struct({
   subject: Schema.NonEmptyString.check(Schema.isMaxLength(1024)),
 });
 
+/** Provider-supplied metadata, never local identity or linking authority. Adapters
+ * project identity responses into this bounded JSON snapshot; tokens and protocol
+ * secrets do not belong here. Applications select their own public session claims. */
 export const OAuthDisplayProfile = Schema.Struct({
   displayName: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(256))),
   handle: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(256))),
+  avatarUrl: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+  profileUrl: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+  email: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(320))),
+  emailVerified: Schema.optionalKey(Schema.Boolean),
+  /** Provider-specific fields. Use the provider's exported profile Schema to
+   * decode them. Availability follows the existing provider permissions. */
+  providerData: Schema.optionalKey(
+    Schema.JsonObject.check(
+      Schema.makeFilter(
+        (value) => new TextEncoder().encode(JSON.stringify(value)).length <= 65_536,
+      ),
+    ),
+  ),
 });
+
+export type OAuthDisplayProfile = typeof OAuthDisplayProfile.Type;
 
 export const OAuthVerifiedExternalIdentity = Schema.Struct({
   identity: OAuthExternalIdentity,

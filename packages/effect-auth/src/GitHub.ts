@@ -15,3 +15,4 @@ export {
 } from "./oauth/github/protocol";
 
 export { gitHubOAuthAppProviderKey } from "./oauth/github/identity";
+export { GitHubUserProfile } from "./oauth/github/profile";

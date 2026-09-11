@@ -139,6 +139,9 @@ export const makeOAuthMethod = <
     {
       readonly resolve: (
         credential: OAuthCredentialSnapshot,
+        /** Fresh provider metadata, after exact local credential/identity matching.
+         * Select application claims explicitly; profile email grants no linking authority. */
+        verified: OAuthVerifiedExternalIdentity,
       ) => Effect.Effect<Claims["Type"], OAuthUnavailable>;
     }
   >(`effect-auth/oauth/${moduleId.length}:${moduleId}/Claims`);
@@ -681,6 +684,7 @@ export const makeOAuthMethod = <
 
             const claims = yield* resolveClaims(
               snapshotOAuthSync(OAuthCredentialSnapshot, credential),
+              snapshotOAuthSync(OAuthVerifiedExternalIdentity, identity),
             );
 
             const established = yield* completeAuthentication({
