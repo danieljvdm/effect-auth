@@ -53,35 +53,31 @@ account provisioning service.
 
 ## Supply the services
 
-Mount the HTTP integration from your provider setup page:
+Provide services to the Layer from your provider setup page:
 
 ```ts [oauth-live.ts]
 import { Layer } from "effect";
 import { OAuthReturnTargets, OAuthTransactionProtector } from "@yielded/auth/OAuth";
 
 import { transactionKeys } from "./auth-config";
-import { http } from "./github";
+import { AuthRoutes } from "./github";
 
-export const AuthRoutes = http
-  .routes()
-  .pipe(
-    Layer.provide(http.layer),
-    Layer.provide(OAuthTransactionProtector.xchacha20poly1305(transactionKeys)),
-    Layer.provide(OAuthReturnTargets.exactRoutes(["/account"])),
-  );
+export const Routes = AuthRoutes.pipe(
+  Layer.provide(OAuthTransactionProtector.xchacha20poly1305(transactionKeys)),
+  Layer.provide(OAuthReturnTargets.exactRoutes(["/account"])),
+);
 ```
 
 Use a dedicated encryption keyring. Supply the remaining account lookup, claims,
 [OAuth persistence](../reference/adapters#oauth), session, and
 `Auth.RequestBindingConfig` Layers from your application.
 
-`http.layer` supplies the configured providers to `AppAuth`. It also exposes the
-protocol for application routes that use `http.middleware`. When using
-`http.handlers(api)` in an existing HttpApi, merge in `http.callbackRoutes()`.
+`AuthHttp.layer` wires `AppAuth` and its providers, action handlers, and callbacks.
+Merge it with your application route Layers.
 
 ## Complete the callback
 
-`http.routes()` serves each callback and completes sign-in. It recovers the flow ID
+`AuthHttp.layer` serves each callback and completes sign-in. It recovers the flow ID
 from the verified HttpOnly binding cookie, validates the provider response, and
 redirects to the flow's approved `returnTarget`. No browser callback page is needed.
 
@@ -94,7 +90,7 @@ exchange, start a fresh sign-in instead of retrying the code.
 Override a path in your HTTP configuration:
 
 ```ts
-const http = AuthHttp.make(AppAuth, {
+const AuthRoutes = AuthHttp.layer(AppAuth, {
   origin,
   oauth: {
     providers,
@@ -104,7 +100,7 @@ const http = AuthHttp.make(AppAuth, {
   },
 });
 
-http.oauth.callbackUrl("github"); // https://app.example.com/login/github/return
+// Callback: https://app.example.com/login/github/return
 ```
 
 For several destinations, use an array of `{ callbackId, path }` entries. Pass the
@@ -123,6 +119,11 @@ mapping. Use `oauth.complete` to select an action when more than one is declared
 
 For application-owned callback handling, use `GitHub.layer` or `OpenIdClient.layer`
 with an explicit `redirectUri` and complete through your protected transport.
+
+For custom HttpApi composition, `AuthHttp.make(AppAuth, options)` exposes
+`handlers(api)`, `callbackRoutes()`, and middleware. Merge the callback routes
+alongside your API and provide `http.layer` to share the configured auth service
+and providers. `http.oauth.callbackUrl(provider)` returns the registered URL.
 
 ## Use the authenticated provider profile
 
@@ -194,7 +195,7 @@ account authorization; refresh does not promise to update that snapshot.
 Add providers to the same HTTP configuration:
 
 ```ts
-const http = AuthHttp.make(AppAuth, {
+const AuthRoutes = AuthHttp.layer(AppAuth, {
   origin,
   oauth: {
     providers: {

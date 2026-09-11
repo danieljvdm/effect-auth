@@ -106,7 +106,32 @@ type OAuthProvided<O> = O extends { readonly oauth: OAuthOptions<unknown, unknow
   ? OAuthProtocol
   : never;
 
-/** Bind an Auth definition to shared browser actions and neutral request middleware.
+/** Mount the shared auth actions and OAuth callbacks with their configured services.
+ * Supply application-owned persistence and account services through Layer.provide.
+ */
+export const layer = <
+  I,
+  S extends SessionMetadata,
+  RE,
+  Api extends SessionApi<S, unknown>,
+  Actions extends AuthActions,
+  AE,
+  AR,
+  const Options extends AuthHttpOptions<unknown, unknown, unknown>,
+>(
+  auth: Omit<Context.Key<I, Api>, typeof Unify.unifySymbol> & {
+    readonly sessions: { readonly Session: Schema.Codec<S, unknown, unknown, RE> };
+    readonly contract: { readonly basePath?: string; readonly actions: Actions };
+    readonly layer: Layer.Layer<I, AE, AR>;
+  },
+  options: Options,
+) => {
+  const http = make(auth, options);
+
+  return http.routes().pipe(Layer.provide(http.layer));
+};
+
+/** Build handlers and middleware for custom HTTP composition. Use layer for standalone mounting.
  * Mutation admission checks Origin and CSRF before effects. Generated operation
  * handlers independently require JSON; custom protected workflows choose their encoding.
  * The application owns session policy, persistence and profile lookup.
@@ -547,7 +572,8 @@ export const make = <
     );
   };
 
-  /** Standalone mounting uses the same generated HttpApi group and handlers. */
+  /** Unprovided routes for custom service composition. layer(auth, options) supplies
+   * the configured auth and OAuth services automatically. */
   const routes = () => {
     const api = HttpApi.make(`${auth.key}/http`).add(httpGroup(auth.contract));
 

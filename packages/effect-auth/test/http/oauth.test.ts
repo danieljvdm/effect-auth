@@ -122,7 +122,7 @@ const makeApp = (custom: boolean) => {
     ).pipe(Layer.provide(binding.layer), Layer.provide(cryptoLayer));
   }
 
-  const http = AuthHttp.make(AppAuth, {
+  const options = {
     origin: "https://app.test",
     oauth: {
       providers: {
@@ -139,16 +139,19 @@ const makeApp = (custom: boolean) => {
           }
         : {}),
     },
-  });
+  };
 
-  const callbackRoutes = http.routes();
+  const http = AuthHttp.make(AppAuth, options);
+  const callbackRoutes = AuthHttp.layer(AppAuth, options);
 
   expectTypeOf<
     CallbackRenderer extends Layer.Services<typeof callbackRoutes> ? true : false
   >().toEqualTypeOf<true>();
+  expectTypeOf<
+    Extract<Layer.Services<typeof callbackRoutes>, AppAuth | OAuthProtocol>
+  >().toEqualTypeOf<never>();
 
   const routes = callbackRoutes.pipe(
-    Layer.provide(http.layer),
     Layer.provide(bindingConfig),
     Layer.provide(HttpServer.layerServices),
     Layer.provide(

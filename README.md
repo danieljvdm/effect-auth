@@ -35,7 +35,6 @@ Bind the server implementation and mount its HTTP routes:
 <!-- #region auth-server -->
 
 ```ts [auth.ts]
-import { Layer } from "effect";
 import { Auth, Password, Sessions } from "@yielded/auth";
 import * as AuthHttp from "@yielded/auth/Http";
 
@@ -47,15 +46,13 @@ export const AppAuth = Auth.make(AuthApi, {
   defaultStrategy: "password",
 });
 
-export const http = AuthHttp.make(AppAuth, { origin: "https://app.example.com" });
-export const AuthRoutes = http.routes().pipe(Layer.provide(AppAuth.layer));
+export const AuthRoutes = AuthHttp.layer(AppAuth, { origin: "https://app.example.com" });
 ```
 
 <!-- #endregion auth-server -->
 
 Supply your persistence and account Layers to `AuthRoutes`, then merge it with
-your router. For application routes that call auth, also provide `AppAuth.layer`
-and wrap them with `http.middleware`, as shown in the
+your router. For application routes that call auth, use the middleware shown in the
 [router composition](docs/guide/http-and-client.md#configure-the-server).
 Inside an existing Effect handler, call the service directly:
 

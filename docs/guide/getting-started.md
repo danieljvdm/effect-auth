@@ -35,7 +35,7 @@ resources; constructing the definition performs no I/O.
 
 ## Call it from a server Effect
 
-Inside an existing Effect request handler covered by `http.middleware`, use your
+Inside an Effect request handler covered by the [auth middleware](./http-and-client#application-routes), use your
 validated `email` and `password` directly:
 
 <!-- prettier-ignore -->

@@ -21,7 +21,7 @@ import * as AuthHttp from "@yielded/auth/Http";
 import { AppAuth } from "./auth";
 import { config } from "./config";
 
-export const http = AuthHttp.make(AppAuth, {
+export const AuthRoutes = AuthHttp.layer(AppAuth, {
   origin: config.AUTH_ORIGIN,
   oauth: {
     providers: {
@@ -34,8 +34,8 @@ export const http = AuthHttp.make(AppAuth, {
 });
 ```
 
-Install `openid-client` and [mount the auth routes](./oauth#supply-the-services).
-The callback URL is derived from `origin` and served by `http.routes()`.
+Install `openid-client` and [supply your services](./oauth#supply-the-services).
+`AuthRoutes` serves the callback URL derived from `origin`.
 [Customize callbacks →](./oauth#customize-callbacks)
 
 GitHub sign-in requests `read:user`; no email address or repository access is required.

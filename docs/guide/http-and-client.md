@@ -55,27 +55,43 @@ export const AppAuth = Auth.make(AuthApi, {
   defaultStrategy: "password",
 });
 
-export const http = AuthHttp.make(AppAuth, { origin: "https://app.example.com" });
+export const AuthRoutes = AuthHttp.layer(AppAuth, { origin: "https://app.example.com" });
 ```
 
-Supply application-owned stores and account authority through `AppAuth.layer`.
+`AuthHttp.layer` mounts the shared actions and configured OAuth callbacks, and
+supplies `AppAuth.layer`. Provide your stores and account authority to the result.
 The [adapter guide](../reference/adapters#compose-the-application-layer) shows the
-`AuthLive` composition used below.
+`AuthDependencies` composition used below.
 
 For an existing raw `HttpRouter`, merge the auth route Layer with your application
-routes. Wrap application routes that use auth with `http.middleware`:
+routes:
 
 ```ts [routes.ts]
 import { Layer } from "effect";
 
 import { ApplicationRoutes } from "./application-routes";
-import { http } from "./auth";
-import { AuthLive } from "./auth-live";
+import { AuthRoutes } from "./auth";
+import { AuthDependencies } from "./auth-live";
 
-export const Routes = Layer.mergeAll(http.routes(), ApplicationRoutes.pipe(http.middleware)).pipe(
-  Layer.provide(AuthLive),
+export const Routes = Layer.mergeAll(AuthRoutes, ApplicationRoutes).pipe(
+  Layer.provide(AuthDependencies),
 );
 ```
+
+### Application routes
+
+For application routes that call auth, build the middleware with `AuthHttp.make`:
+
+```ts [auth-http.ts]
+import * as AuthHttp from "@yielded/auth/Http";
+
+import { AppAuth } from "./auth";
+
+export const http = AuthHttp.make(AppAuth, { origin: "https://app.example.com" });
+```
+
+Wrap those route Layers with `ApplicationRoutes.pipe(http.middleware,
+Layer.provide(AppAuth.layer))` before merging them above.
 
 The middleware creates fresh request context and delivers credential cookies on
 the response. It accepts ordinary JSON, form, and multipart routes. Inside those
@@ -102,7 +118,7 @@ import { Layer } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 import { Api } from "./api";
-import { http } from "./auth";
+import { http } from "./auth-http";
 import { AuthLive } from "./auth-live";
 import { ProjectHandlers } from "./projects-handlers";
 
