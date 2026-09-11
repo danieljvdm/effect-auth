@@ -1,5 +1,11 @@
 # @yielded/auth
 
+## 0.1.0-beta.4
+
+### Patch Changes
+
+- [#15](https://github.com/yielded-dev/auth/pull/15) [`85edaa4`](https://github.com/yielded-dev/auth/commit/85edaa44b4186d2aaf37c7007441ee9803c990cf) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Validate GitHub OAuth callbacks against the required `https://github.com/login/oauth` issuer. BEHAVIOR CHANGE: restart pending flows and follow the OAuth guide to re-establish GitHub bindings or grants created with the old issuer; other providers and application data are unaffected.
+
 ## 0.1.0-beta.3
 
 ### Patch Changes
