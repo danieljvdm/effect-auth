@@ -154,22 +154,53 @@ the request boundary; it applies mutation policy and supplies private collectors
 without imposing a body format. Custom hosts still own webhook validation and
 ordinary application mutation policy.
 
+## Expose another method
+
+The method guides show the available local strategy calls. Browser access requires
+an action in `AuthApi`: `AuthContract.passwordSignIn` is the password shortcut;
+`AuthContract.fromOperation` reuses a pure operation contract; `AuthContract.action`
+accepts explicit payload, success, and error schemas.
+
+Each action selects a server `method` and, when needed, a `strategy`. The method
+defaults to the action's name. You can expose two strategies under different names
+without making the client choose a strategy string. Configure only actions your
+application intends to serve. Passkey and TOTP have dedicated pure contract modules;
+the email, phone, and OAuth flows currently require explicit action schemas.
+
+Map private method inputs through `requestFields` when declaring an action:
+
+| Method input                                                         | Credential slot      |
+| -------------------------------------------------------------------- | -------------------- |
+| Email, phone, or OAuth `requestBinding`; passkey `bindingCredential` | `request-binding`    |
+| Email continuation `credential`                                      | `proof-continuation` |
+| TOTP `pendingCredential`                                             | `pending-proof`      |
+
+The server injects those values from `Auth.AuthRequest`; both named local calls and
+remote payloads omit them. Set `credentials: true` for actions that issue or clear
+credentials, declare any private reveals, and supply a `subject.fromSuccess`
+projection for actions that establish or replace the authenticated account.
+`fromOperation` carries forward the operation's schemas, replay policy, credential
+delivery, and reveal declarations; the subject projection remains explicit.
+
+See the [passkey contract](./passkeys#define-the-shared-actions) for a complete
+example and [TOTP](./totp#expose-private-reveals-over-http) for private reveals.
+
 ## Call the client directly
 
 ```ts [client-service.ts]
-import { Effect } from "effect";
 import * as Client from "effect-auth/Client";
 
 import { AuthApi } from "./auth-contract";
 
 export const AppClient = Client.make(AuthApi, { baseUrl: "https://app.example.com" });
+```
 
-export const currentMember = Effect.gen(function* () {
-  const client = yield* AppClient;
-  const session = yield* client.auth.getSession();
+Inside an existing Effect with `AppClient` provided:
 
-  return session?.claims.displayName ?? null;
-});
+<!-- prettier-ignore -->
+```ts
+const client = yield* AppClient;
+const session = yield* client.auth.getSession();
 ```
 
 `Client.make` declares a yieldable service. Provide `AppClient.layer` to a program,
@@ -201,10 +232,19 @@ including setup errors.
 Compose application queries with the same scoped client:
 
 ```ts [member-name.ts]
-import { auth } from "./auth-client";
-import { currentMember } from "./client-service";
+import { Effect } from "effect";
 
-export const memberName = auth.runtime.atom(currentMember);
+import { auth } from "./auth-client";
+import { AppClient } from "./client-service";
+
+export const memberName = auth.runtime.atom(
+  Effect.gen(function* () {
+    const client = yield* AppClient;
+    const session = yield* client.auth.getSession();
+
+    return session?.claims.displayName ?? null;
+  }),
+);
 ```
 
 Pass a `services` Layer to `AuthAtom.make` when response codecs require services;
@@ -293,33 +333,10 @@ shows rendering, hydration, and unmount finalizers.
 
 ## Compose a passkey workflow
 
-Reuse pure operation schemas to expose additional methods. This alternative
-contract matches the passkey strategy in the [passkey guide](./passkeys):
+The [passkey guide](./passkeys) defines both the server strategy and this shared
+contract:
 
-```ts [passkey-contract.ts]
-import { Schema } from "effect";
-import * as AuthContract from "effect-auth/AuthContract";
-import { makePasskeyContract } from "effect-auth/PasskeyContract";
-
-export const PasskeyApi = AuthContract.make("app/Auth", {
-  claims: Schema.Struct({ displayName: Schema.String }),
-  actions: (sessions) => {
-    const passkey = makePasskeyContract("app/Auth/passkey", sessions);
-
-    return {
-      signIn: AuthContract.fromOperation(passkey.operations.Begin, { strategy: "passkey" }),
-      completeSignIn: AuthContract.fromOperation(passkey.operations.Complete, {
-        strategy: "passkey",
-        requestFields: { bindingCredential: "request-binding" },
-        subject: {
-          fromSuccess: (result) =>
-            result._tag === "Authenticated" ? result.session.subjectId : undefined,
-        },
-      }),
-    };
-  },
-});
-```
+<!--@include: ./passkeys.md#passkey-contract-->
 
 Bind `PasskeyApi` with `Auth.make(PasskeyApi, { sessions, strategies })` on the server,
 using the same passkey configuration. `requestFields` removes private inputs from
@@ -338,25 +355,21 @@ import { PasskeyApi } from "./passkey-contract";
 export const PasskeyClient = Client.make(PasskeyApi, { baseUrl: "https://app.example.com" });
 export const passkeys = AuthAtom.make(PasskeyClient);
 
-export const signIn = AuthAtom.workflow<{ flowId: string; commandId: string }>()(
-  passkeys.runtime,
+export const signIn = passkeys.runtime.fn<{ flowId: string; commandId: string }>()(
   Effect.fn("app.passkeySignIn")(function* (input) {
-    const workflow = yield* AuthAtom.AuthAtomWorkflow;
+    const client = yield* PasskeyClient;
     const browser = yield* makeSimpleWebAuthnPasskeyBrowser();
-    const started = yield* workflow.call(PasskeyApi.actions.signIn.route, {
+    const started = yield* client.auth.signIn({
       ...input,
       profileId: "default",
     });
     const response = yield* browser.authenticate({ started, mediation: "required" });
 
-    yield* workflow.current;
-    return yield* workflow.completeAuthentication(
-      PasskeyApi.actions.completeSignIn.route,
-      { flowId: input.flowId, response: Redacted.value(response.response) },
-      (result) => (result._tag === "Authenticated" ? result.session.subjectId : undefined),
-    );
+    return yield* client.auth.completeSignIn({
+      flowId: input.flowId,
+      response: Redacted.value(response.response),
+    });
   }),
-  { reactivityKeys: [] },
 );
 ```
 
@@ -370,7 +383,7 @@ completion. Unknown write outcomes require authoritative lookup or a fresh flow.
 `http.withRequest` wraps a custom Effect returning `HttpServerResponse`.
 `http.operationLayer` supplies browser policy and caller resolution to existing
 `OperationHttpServer` contracts. Those descriptors continue to own private payload
-injection and explicitly selected reveals, as in the [TOTP guide](./totp#expose-private-reveals-over-http).
+injection and explicitly selected reveals.
 Encode expected response failures before leaving the request wrapper.
 
 `OperationHttpClient`, `AuthAtom.query`, `AuthAtom.mutation`, and `AuthAtom.workflow`

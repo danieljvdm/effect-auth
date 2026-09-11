@@ -7,14 +7,49 @@ description: Begin a passkey ceremony, call the browser, and verify the response
 Passkey sign-in has three steps: create the challenge on your server, ask the
 browser to authenticate, and verify the response on your server.
 
+## Define the shared actions
+
+<!-- #region passkey-contract -->
+
+```ts [passkey-contract.ts]
+import { Schema } from "effect";
+import * as AuthContract from "effect-auth/AuthContract";
+import { makePasskeyContract } from "effect-auth/PasskeyContract";
+
+export const PasskeyApi = AuthContract.make("app/Auth", {
+  claims: Schema.Struct({ displayName: Schema.String }),
+  actions: (sessions) => {
+    const passkey = makePasskeyContract("app/Auth/passkey", sessions);
+
+    return {
+      signIn: AuthContract.fromOperation(passkey.operations.Begin, { strategy: "passkey" }),
+      completeSignIn: AuthContract.fromOperation(passkey.operations.Complete, {
+        strategy: "passkey",
+        requestFields: { bindingCredential: "request-binding" },
+        subject: {
+          fromSuccess: (result) =>
+            result._tag === "Authenticated" ? result.session.subjectId : undefined,
+        },
+      }),
+    };
+  },
+});
+```
+
+<!-- #endregion passkey-contract -->
+
+`requestFields` supplies the private request binder from the HTTP request. Neither
+the named server call nor the browser payload includes that credential. The
+`subject` projection lets the client publish an account change after authentication.
+
 ## Enable passkeys
 
 ```ts [auth.ts]
-import { Schema } from "effect";
 import { Auth, Passkey, Sessions } from "effect-auth";
 
-export const AppAuth = Auth.make("app/Auth", {
-  claims: Schema.Struct({ displayName: Schema.String }),
+import { PasskeyApi } from "./passkey-contract";
+
+export const AppAuth = Auth.make(PasskeyApi, {
   sessions: Sessions.stateful(),
   strategies: {
     passkey: Passkey.make({
@@ -34,19 +69,13 @@ make existing passkeys unusable.
 
 ## Begin sign-in on the server
 
-```ts [begin-passkey.ts]
-import { Effect } from "effect";
+Inside an existing Effect handler, with `AppAuth` provided and the HTTP request
+boundary in place:
 
-import { AppAuth } from "./auth";
-
-export const beginPasskey = Effect.fn("app.beginPasskey")(function* (
-  flowId: string,
-  commandId: string,
-) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.signIn({ flowId, commandId, profileId: "default" });
-});
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const started = yield* auth.signIn({ flowId, commandId, profileId: "default" });
 ```
 
 Return the challenge to the browser. The request-binding credential is delivered
@@ -54,18 +83,13 @@ privately; keep it associated with this flow.
 
 ## Ask the browser to authenticate
 
-```ts [passkey-browser.ts]
-import { Effect } from "effect";
-import type { PasskeyAuthenticationStarted } from "effect-auth/Passkey";
-import { makeSimpleWebAuthnPasskeyBrowser } from "effect-auth/PasskeyBrowser";
+Inside a scoped browser Effect, import `makeSimpleWebAuthnPasskeyBrowser` from
+`effect-auth/PasskeyBrowser` and use the public `started` result:
 
-export const authenticate = Effect.fn("app.authenticatePasskey")(function* (
-  started: PasskeyAuthenticationStarted,
-) {
-  const browser = yield* makeSimpleWebAuthnPasskeyBrowser();
-
-  return yield* browser.authenticate({ started, mediation: "required" });
-});
+<!-- prettier-ignore -->
+```ts
+const browser = yield* makeSimpleWebAuthnPasskeyBrowser();
+const assertion = yield* browser.authenticate({ started, mediation: "required" });
 ```
 
 Keep the Effect's Scope open for the ceremony. Interrupting it cancels that
@@ -74,25 +98,20 @@ ceremony. Import `PasskeyBrowser` only in the browser; it requires
 
 ## Complete sign-in on the server
 
-```ts [complete-passkey.ts]
-import { Effect } from "effect";
-
-import { AppAuth } from "./auth";
-
-export const completePasskey = Effect.fn("app.completePasskey")(function* (
-  flowId: string,
-  bindingCredential: string,
-  response: string,
-) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.completeSignIn({ flowId, bindingCredential, response });
-});
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const result = yield* auth.completeSignIn({ flowId, response });
 ```
 
-Send the browser's serialized response through the protected transport. A session
+Here `response` is the serialized string obtained from
+`Redacted.value(assertion.response)` in the browser ceremony above, with `Redacted`
+imported from `effect`. Send it through the protected transport; the server injects
+the original request-binding cookie. A session
 is issued only after server verification and the current account checks succeed.
-The [Atom workflow](./http-and-client#compose-a-passkey-workflow) connects these steps.
+The client exposes the same calls as `client.auth.signIn(...)` and
+`client.auth.completeSignIn(...)`. The
+[Atom workflow](./http-and-client#compose-a-passkey-workflow) connects these steps.
 
 ## Install the server verifier
 

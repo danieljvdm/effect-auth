@@ -69,6 +69,24 @@ type. [Getting started](./getting-started#add-another-method) shows local strate
 selection, and the [HTTP guide](./http-and-client#compose-a-passkey-workflow) shows
 exposing another method through the shared contract.
 
+## Sign-in flows by method
+
+These are the local method names; shared contracts choose which calls to expose:
+
+| Method                             | Flow                                                                          |
+| ---------------------------------- | ----------------------------------------------------------------------------- |
+| [Password](./passwords)            | `signIn` → session or additional factor.                                      |
+| [Email code / magic link](./codes) | `beginSignIn` → `signIn` sends the proof → `verifySignIn` → `completeSignIn`. |
+| [SMS code](./phone)                | `signIn` sends the code → `completeSignIn`.                                   |
+| [Passkey](./passkeys)              | `signIn` → browser ceremony → `completeSignIn`.                               |
+| [OAuth](./oauth)                   | `signIn` → provider redirect → `completeSignIn`.                              |
+| [TOTP](./totp)                     | Primary method returns a pending proof → `verifyPending`.                     |
+
+Multi-step methods retain public flow identifiers between calls. Private request
+binders and continuation credentials travel through the request boundary. The
+[HTTP guide](./http-and-client#expose-another-method) explains how shared actions
+remove those fields from both server and client call inputs.
+
 ## What goes where
 
 ```text

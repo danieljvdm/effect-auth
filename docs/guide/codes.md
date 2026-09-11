@@ -7,6 +7,10 @@ description: Send email codes, verify them, and finish sign-in.
 Email sign-in is a short flow: bind the request, send a proof, verify it, then
 complete sign-in.
 
+This guide shows local service calls inside existing Effect request handlers.
+Provide `AppAuth` and the HTTP request boundary. For browser access, declare the
+actions in a [shared contract](./http-and-client#expose-another-method).
+
 ## Enable email codes
 
 ```ts [auth.ts]
@@ -35,95 +39,66 @@ in `proofPolicy`; its full shape is shown below.
 
 ## Start the flow and send a code
 
-```ts [request-code.ts]
-import { Effect } from "effect";
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const started = yield* auth.beginSignIn({ flowId });
+```
 
-import { AppAuth } from "./auth";
+The next request sends the code:
 
-export const beginEmail = Effect.fn("app.beginEmail")(function* (flowId: string) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.beginSignIn({ flowId });
-});
-
-export const requestCode = Effect.fn("app.requestCode")(function* (
-  flowId: string,
-  requestId: string,
-  requestBinding: string,
-  email: string,
-) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.signIn({
-    flowId,
-    requestId,
-    requestBinding,
-    email,
-    returnTarget: "/account",
-    locale: "en",
-  });
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const sent = yield* auth.signIn({
+  flowId,
+  requestId,
+  requestBinding,
+  email,
+  returnTarget: "/account",
+  locale: "en",
 });
 ```
 
-`beginEmail` delivers a private request-binding credential. The next handler reads
-it from the request cookie. `requestCode` returns a proof `reference`, not the code.
+`beginSignIn` delivers a private request-binding credential. The next request uses
+that credential as `requestBinding`. `signIn` returns a proof `reference`, not the code.
 Your `EmailProofDelivery` service sends the code.
+
+`requestBinding` and the continuation `credential` below are private server inputs.
+Map them to the `request-binding` and `proof-continuation` slots through the
+contract's `requestFields`. The resulting named server and client methods omit
+those fields; never make the browser read an HttpOnly cookie or send it as JSON.
 
 ## Verify the code
 
-```ts [verify-code.ts]
-import { Effect } from "effect";
-import type { ProofReference } from "effect-auth/Proofs";
-
-import { AppAuth } from "./auth";
-
-export const verifyCode = Effect.fn("app.verifyCode")(function* (
-  flowId: string,
-  requestBinding: string,
-  email: string,
-  reference: typeof ProofReference.Encoded,
-  code: string,
-) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.verifySignIn({
-    flowId,
-    requestBinding,
-    email,
-    reference,
-    secret: code,
-    returnTarget: "/account",
-  });
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const verified = yield* auth.verifySignIn({
+  flowId,
+  requestBinding,
+  email,
+  reference,
+  secret: code,
+  returnTarget: "/account",
 });
 ```
 
-Keep the returned `continuation.continuationId`. Its matching credential is
+Keep `verified.continuation.continuationId`. Its matching credential is
 privately delivered to the originating client.
 
 ## Complete sign-in
 
-```ts [complete-email.ts]
-import { Effect } from "effect";
-
-import { AppAuth } from "./auth";
-
-export const completeEmail = Effect.fn("app.completeEmail")(function* (
-  flowId: string,
-  requestBinding: string,
-  email: string,
-  continuationId: string,
-  credential: string,
-) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.completeSignIn({
-    flowId,
-    requestBinding,
-    email,
-    continuationId,
-    credential,
-    returnTarget: "/account",
-  });
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const result = yield* auth.completeSignIn({
+  flowId,
+  requestBinding,
+  email,
+  continuationId,
+  credential,
+  returnTarget: "/account",
 });
 ```
 
