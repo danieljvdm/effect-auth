@@ -201,7 +201,7 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
           ),
         ).toBe("S256");
       expect(yield* exchange(protocol, githubStart)).toEqual({
-        identity: { provider: "github", issuer: "https://github.com", subject: "42" },
+        identity: { provider: "github", issuer: "https://github.com/login/oauth", subject: "42" },
         profile: { displayName: "octocat" },
       });
       expect(yield* exchange(protocol, googleStart)).toEqual({
@@ -277,7 +277,10 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
         );
         yield* expectTag(
           makeOpenIdClientOAuthProtocol({
-            providers: [github(), { ...google(), callbacks: github().callbacks }],
+            providers: [
+              { ...github(), responseIssuerMode: "unsupported" },
+              { ...google(), callbacks: github().callbacks },
+            ],
             timeoutSeconds: 1,
             fetch: transport.fetch,
           }),
@@ -387,6 +390,67 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
         exchange(protocol, yield* begin(protocol, "github")),
         "OAuthProtocolRejected",
       );
+    }),
+  );
+
+  it.live("validates GitHub's RFC 9207 issuer before exchanging a callback code", () =>
+    Effect.gen(function* () {
+      const transport = makeTransport();
+
+      const protocol = yield* makeGitHubOAuthAppProtocol({
+        registrations: [
+          {
+            configurationGeneration: 1,
+            issuance: "active",
+            clientId: "github",
+            clientSecret: Redacted.make("secret"),
+            callbacks: github().callbacks,
+          },
+        ],
+        timeoutSeconds: 1,
+        fetch: transport.fetch,
+      });
+
+      const started = yield* begin(protocol, "github");
+
+      // Use GitHub's published issuer to reproduce an issuer-bearing callback,
+      // independently of the adapter's own configuration.
+      const githubIssuer = OAuthIssuer.make("https://github.com/login/oauth");
+
+      expect(started.configuration.issuer).toBe(githubIssuer);
+      expect(started.configuration.responseIssuerMode).toBe("required");
+
+      const input = {
+        configuration: started.configuration,
+        secrets: started.secrets,
+        verificationStartedAt: yield* DateTime.now,
+        response: {
+          _tag: "Code" as const,
+          state: started.secrets.state,
+          code: Redacted.make("single-use-code"),
+        },
+      };
+
+      for (const issuer of [undefined, OAuthIssuer.make("https://github.com")]) {
+        yield* expectTag(
+          protocol.exchangeVerifiedIdentity({
+            ...input,
+            response: { ...input.response, ...(issuer === undefined ? {} : { issuer }) },
+          }),
+          "OAuthProtocolRejected",
+        );
+      }
+      expect(transport.requests).toHaveLength(0);
+      expect(
+        yield* protocol.exchangeVerifiedIdentity({
+          ...input,
+          response: { ...input.response, issuer: githubIssuer },
+        }),
+      ).toEqual({
+        identity: { provider: "github", issuer: githubIssuer, subject: "42" },
+        profile: { displayName: "octocat" },
+      });
+      expect(transport.requests.filter((request) => request.method === "POST")).toHaveLength(1);
     }),
   );
 
