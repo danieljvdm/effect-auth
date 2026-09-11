@@ -8,6 +8,7 @@
   "changesets": [
     "composable-oauth-providers",
     "github-response-issuer",
+    "provider-profile-data",
     "quiet-modules-shake",
     "simple-request-auth",
     "yielded-auth-publication",
