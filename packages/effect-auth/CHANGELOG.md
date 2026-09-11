@@ -1,5 +1,11 @@
 # @yielded/auth
 
+## 0.1.0-beta.5
+
+### Patch Changes
+
+- [#17](https://github.com/yielded-dev/auth/pull/17) [`098ad4a`](https://github.com/yielded-dev/auth/commit/098ad4a416e619a4ee9d44cbee36b5a924d6b595) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Expose complete documented GitHub user profiles and standard OIDC user claims with typed schemas and normalized display fields. Pass the authenticated profile to registration authority and sign-in claims resolvers while keeping local identity and public session claims application-owned.
+
 ## 0.1.0-beta.4
 
 ### Patch Changes
