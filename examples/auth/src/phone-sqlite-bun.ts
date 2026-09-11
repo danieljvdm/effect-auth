@@ -1,16 +1,13 @@
 import { BunRuntime } from "@effect/platform-bun";
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
-import { eq } from "drizzle-orm";
-import * as Drizzle from "drizzle-orm/effect-sqlite-bun";
-import { Effect, Layer, Redacted } from "effect";
-import { AuthRequest, RequestBindingConfig } from "effect-auth/Auth";
+import { AuthRequest, RequestBindingConfig } from "@yielded/auth/Auth";
 import {
   makeAuthenticationAuthorityServices,
   makePhonePersistenceServices,
   makeProofPersistenceServices,
-} from "effect-auth/DrizzleSqliteBun";
-import { LifecycleHooks } from "effect-auth/Hooks";
-import { guest, type AuthCredentialCommand, type AuthInvocation } from "effect-auth/Operations";
+} from "@yielded/auth/DrizzleSqliteBun";
+import { LifecycleHooks } from "@yielded/auth/Hooks";
+import { guest, type AuthCredentialCommand, type AuthInvocation } from "@yielded/auth/Operations";
 import {
   PhoneActionEvidence,
   PhoneActionRequired,
@@ -20,10 +17,17 @@ import {
   PhonePersistence,
   PhoneAdmission,
   PhoneSignInTargets,
-} from "effect-auth/PhoneOtp";
-import { ProofPersistence, SmsProofDelivery, type ProofDeliveryMessage } from "effect-auth/Proofs";
-import { AuthenticationAuthority } from "effect-auth/Sessions";
-import { layerWebCrypto } from "effect-auth/WebCrypto";
+} from "@yielded/auth/PhoneOtp";
+import {
+  ProofPersistence,
+  SmsProofDelivery,
+  type ProofDeliveryMessage,
+} from "@yielded/auth/Proofs";
+import { AuthenticationAuthority } from "@yielded/auth/Sessions";
+import { layerWebCrypto } from "@yielded/auth/WebCrypto";
+import { eq } from "drizzle-orm";
+import * as Drizzle from "drizzle-orm/effect-sqlite-bun";
+import { Effect, Layer, Redacted } from "effect";
 
 import { keyring, phone, sessionPolicy, sessions, shopAuth } from "./phone-application";
 import {

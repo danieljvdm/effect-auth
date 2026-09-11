@@ -1,1 +1,1 @@
-export { query, mutation, workflow } from "effect-auth/Atom";
+export { query, mutation, workflow } from "@yielded/auth/Atom";

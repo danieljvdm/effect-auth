@@ -1,12 +1,11 @@
-import { DateTime, Effect, Layer, Option, Redacted, Schema } from "effect";
-import { Auth, Password } from "effect-auth";
+import { Auth, Password } from "@yielded/auth";
 import {
   coordinateCommit,
   hasCommitScope,
   LifecycleHooks,
   type CommitJournal,
-} from "effect-auth/Hooks";
-import { LoginIdentifier } from "effect-auth/Identity";
+} from "@yielded/auth/Hooks";
+import { LoginIdentifier } from "@yielded/auth/Identity";
 import {
   PasswordActionEvidence,
   PasswordActionRequired,
@@ -15,7 +14,7 @@ import {
   PasswordUnavailable,
   type PasswordCredentialSnapshot,
   type PasswordMutationInput,
-} from "effect-auth/Password";
+} from "@yielded/auth/Password";
 import {
   ProofPersistence,
   ProofRequestConflict,
@@ -24,8 +23,8 @@ import {
   type ProofRecord,
   type ProofCompletionInput,
   type ProofRequestReceipt,
-} from "effect-auth/Proofs";
-import { SubjectId } from "effect-auth/Schema";
+} from "@yielded/auth/Proofs";
+import { SubjectId } from "@yielded/auth/Schema";
 import {
   AuthenticationAuthority,
   AuthenticationFlowId,
@@ -35,7 +34,8 @@ import {
   type AuthenticationEvidence,
   type AuthenticationRevision,
   type AuthenticationRequirement,
-} from "effect-auth/Sessions";
+} from "@yielded/auth/Sessions";
+import { DateTime, Effect, Layer, Option, Redacted, Schema } from "effect";
 
 const Claims = Schema.Struct({ team: Schema.String });
 const budget = { limit: 30, windowMillis: 60_000 };

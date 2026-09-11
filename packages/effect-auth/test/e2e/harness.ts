@@ -1,9 +1,9 @@
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun";
+import { AuthKeyring, AuthTokenCodec } from "@yielded/auth/AuthTokenCodec";
+import { layerOAuthPolicy } from "@yielded/auth/OAuth";
+import { KeyId, SubjectId } from "@yielded/auth/Schema";
+import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
 import { Duration, Effect, Layer, Option, Redacted, Schema } from "effect";
-import { AuthKeyring, AuthTokenCodec } from "effect-auth/AuthTokenCodec";
-import { layerOAuthPolicy } from "effect-auth/OAuth";
-import { KeyId, SubjectId } from "effect-auth/Schema";
-import { layerCryptoWeb } from "effect-auth/WebCrypto";
 import {
   FetchHttpClient,
   HttpClient,

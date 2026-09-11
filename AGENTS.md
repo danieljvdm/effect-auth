@@ -75,7 +75,7 @@ specifications, planning documents, decision registers, ADRs, roadmaps, or evide
 
 ```text
 identity and operation contracts <- authentication strategies <- persistence/protocol adapters
-public effect-auth modules <- consumer examples
+public @yielded/auth modules <- consumer examples
 ```
 
 An inward module must not import an outward adapter. Define or deepen an inward port and
@@ -101,7 +101,7 @@ framework package only for a new concern agreed with the repository owner.
   agent merge instead of being overwritten. Add a new skill from the approved catalog with
   `bunx @danieljvdm/dev-kit@latest skills add <name>`.
 - Contributor agent skills are repository tooling. They are not runtime Skill definitions and
-  must not be imported by `effect-auth`.
+  must not be imported by `@yielded/auth`.
 - Before handoff, run `vp run ready`.
 
 ## Change discipline
@@ -120,7 +120,7 @@ framework package only for a new concern agreed with the repository owner.
   re-propose them.
 - Do not silently widen errors to `unknown`, `Error`, or `any`.
 - Do not use type assertions to cross a schema boundary.
-- Effect Auth is pre-production. Keep one current implementation per workflow; update internal
+- Yielded Auth is pre-production. Keep one current implementation per workflow; update internal
   contracts in place and remove superseded aliases or migration shims. Prefer resetting affected
   development data and state the reset scope. External contracts require explicit compatibility.
   Preserve authorization, validation, durable identities, and receipts needed for safe retries.

@@ -333,9 +333,9 @@ export const verifyPackageExports = Effect.fn("verifyPackageExports")(
 
             if (!owner) {
               if (
-                specifier.startsWith("@effect-auth/") ||
-                specifier === "effect-auth" ||
-                specifier.startsWith("effect-auth/")
+                specifier.startsWith("@yielded/") ||
+                specifier === "@yielded/auth" ||
+                specifier.startsWith("@yielded/auth/")
               )
                 report(file, `${specifier} references an unknown workspace package`);
               continue;

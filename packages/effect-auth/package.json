@@ -1,7 +1,19 @@
 {
-  "name": "effect-auth",
+  "name": "@yielded/auth",
   "version": "0.1.0-beta.0",
   "description": "Composable authentication, sessions, and identity workflows for Effect.",
+  "keywords": [
+    "authentication",
+    "effect",
+    "oauth",
+    "passkeys",
+    "sessions",
+    "typescript"
+  ],
+  "homepage": "https://github.com/danieljvdm/effect-auth#readme",
+  "bugs": {
+    "url": "https://github.com/danieljvdm/effect-auth/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",

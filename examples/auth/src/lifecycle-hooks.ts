@@ -1,5 +1,4 @@
 import { BunRuntime } from "@effect/platform-bun";
-import { DateTime, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
 import {
   composePlugins,
   HookDenied,
@@ -7,10 +6,11 @@ import {
   interactiveContribution,
   LifecycleEventId,
   pluginContributions,
-} from "effect-auth/Hooks";
-import { LoginIdentifier } from "effect-auth/Identity";
-import { guest, remoteGroup } from "effect-auth/Operations";
-import { SubjectId } from "effect-auth/Schema";
+} from "@yielded/auth/Hooks";
+import { LoginIdentifier } from "@yielded/auth/Identity";
+import { guest, remoteGroup } from "@yielded/auth/Operations";
+import { SubjectId } from "@yielded/auth/Schema";
+import { DateTime, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 

@@ -1,6 +1,6 @@
-import * as Auth from "effect-auth/Auth";
-import * as Passkey from "effect-auth/Passkey";
-import * as Totp from "effect-auth/Totp";
+import * as Auth from "@yielded/auth/Auth";
+import * as Passkey from "@yielded/auth/Passkey";
+import * as Totp from "@yielded/auth/Totp";
 
 import {
   StudioClaims,

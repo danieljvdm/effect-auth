@@ -1,13 +1,13 @@
 import { BunRuntime } from "@effect/platform-bun";
-import { Effect, Layer, Redacted } from "effect";
 import {
   CompromisedPasswords,
   EncodedPasswordHash,
   NewPasswordCheck,
   PasswordHashing,
   PasswordKdfAdmission,
-} from "effect-auth/Password";
-import { layerWebCrypto } from "effect-auth/WebCrypto";
+} from "@yielded/auth/Password";
+import { layerWebCrypto } from "@yielded/auth/WebCrypto";
+import { Effect, Layer, Redacted } from "effect";
 
 // Disposable tiny corpus demonstrates explicit offline screening. A production
 // consumer supplies a maintained compromised/common-password corpus or service.

@@ -1,10 +1,16 @@
-# Effect Auth
+# Yielded Auth
 
 Composable authentication, sessions, and identity workflows for Effect.
 
-Effect Auth owns security-sensitive authentication behavior. Applications provide
+Yielded Auth owns security-sensitive authentication behavior. Applications provide
 identity authority, persistence, protocol verification, and credential delivery.
 Optional adapters support Drizzle databases, Cloudflare, OAuth/OIDC, and WebAuthn.
+
+Install the beta release with Effect v4:
+
+```sh
+vp add @yielded/auth@beta effect@4.0.0-rc.112
+```
 
 ## One API, server and client
 
@@ -14,7 +20,7 @@ Define the shared contract in `auth-contract.ts`:
 
 ```ts [auth-contract.ts]
 import { Schema } from "effect";
-import * as AuthContract from "effect-auth/AuthContract";
+import * as AuthContract from "@yielded/auth/AuthContract";
 
 export const AuthApi = AuthContract.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
@@ -30,8 +36,8 @@ Bind the server implementation and mount its HTTP routes:
 
 ```ts [auth.ts]
 import { Layer } from "effect";
-import { Auth, Password, Sessions } from "effect-auth";
-import * as AuthHttp from "effect-auth/Http";
+import { Auth, Password, Sessions } from "@yielded/auth";
+import * as AuthHttp from "@yielded/auth/Http";
 
 import { AuthApi } from "./auth-contract";
 
@@ -68,8 +74,8 @@ Create the client and its atoms from the same contract:
 <!-- #region auth-client -->
 
 ```ts [auth-client.ts]
-import * as AuthAtom from "effect-auth/Atom";
-import * as Client from "effect-auth/Client";
+import * as AuthAtom from "@yielded/auth/Atom";
+import * as Client from "@yielded/auth/Client";
 
 import { AuthApi } from "./auth-contract";
 

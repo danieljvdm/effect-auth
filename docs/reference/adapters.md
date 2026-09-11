@@ -5,7 +5,7 @@ description: Connect Drizzle storage to your authentication service.
 # Adapters and persistence
 
 Choose the adapter for your database and runtime. You own the tables and migrations;
-the adapter maps them to Effect Auth's storage services.
+the adapter maps them to Yielded Auth's storage services.
 
 ## Connect password storage
 
@@ -15,8 +15,8 @@ For SQLite on Bun, create the Drizzle client and provide the resulting service:
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun";
 import { Effect, Layer } from "effect";
-import { makePasswordPersistenceServices } from "effect-auth/DrizzleSqliteBun";
-import { PasswordPersistence } from "effect-auth/Password";
+import { makePasswordPersistenceServices } from "@yielded/auth/DrizzleSqliteBun";
+import { PasswordPersistence } from "@yielded/auth/Password";
 
 import { passwordMapping } from "./schema";
 
@@ -31,14 +31,14 @@ export const PasswordPersistenceLive = Layer.unwrap(
 ```
 
 `passwordMapping` maps your account, identifier, credential, revision, attempt,
-and receipt tables. It is a `PasswordPersistenceMapping` from `effect-auth/Drizzle`.
+and receipt tables. It is a `PasswordPersistenceMapping` from `@yielded/auth/Drizzle`.
 Supply `LifecycleHooks` and your other account/session Layers at the composition root.
 
 ## Compose the application Layer
 
 ```ts [auth-live.ts]
 import { Layer } from "effect";
-import { Auth } from "effect-auth";
+import { Auth } from "@yielded/auth";
 
 import { AppAuth } from "./auth";
 import { AccountsLive } from "./auth-accounts";
@@ -60,20 +60,20 @@ for each request or use [the HTTP adapter](../guide/http-and-client).
 
 ## Choose a driver
 
-| Database / runtime    | Direct import                   |
-| --------------------- | ------------------------------- |
-| PostgreSQL            | `effect-auth/DrizzlePostgres`   |
-| PGlite                | `effect-auth/DrizzlePglite`     |
-| MySQL                 | `effect-auth/DrizzleMysql2`     |
-| libSQL                | `effect-auth/DrizzleLibsql`     |
-| SQLite on Bun         | `effect-auth/DrizzleSqliteBun`  |
-| SQLite on Node        | `effect-auth/DrizzleSqliteNode` |
-| SQLite WASM           | `effect-auth/DrizzleSqliteWasm` |
-| Cloudflare D1         | `effect-auth/DrizzleD1`         |
-| Durable Object SQLite | `effect-auth/DrizzleSqliteDo`   |
+| Database / runtime    | Direct import                     |
+| --------------------- | --------------------------------- |
+| PostgreSQL            | `@yielded/auth/DrizzlePostgres`   |
+| PGlite                | `@yielded/auth/DrizzlePglite`     |
+| MySQL                 | `@yielded/auth/DrizzleMysql2`     |
+| libSQL                | `@yielded/auth/DrizzleLibsql`     |
+| SQLite on Bun         | `@yielded/auth/DrizzleSqliteBun`  |
+| SQLite on Node        | `@yielded/auth/DrizzleSqliteNode` |
+| SQLite WASM           | `@yielded/auth/DrizzleSqliteWasm` |
+| Cloudflare D1         | `@yielded/auth/DrizzleD1`         |
+| Durable Object SQLite | `@yielded/auth/DrizzleSqliteDo`   |
 
 Install the selected driver's Effect SQL and Drizzle peers. Import it directly to
-avoid loading unrelated adapters. Shared mapping types live in `effect-auth/Drizzle`.
+avoid loading unrelated adapters. Shared mapping types live in `@yielded/auth/Drizzle`.
 
 ## Passwords
 

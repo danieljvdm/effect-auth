@@ -1,1 +1,1 @@
-export { Identity } from "effect-auth";
+export { Identity } from "@yielded/auth";

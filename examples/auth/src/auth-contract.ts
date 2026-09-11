@@ -1,5 +1,5 @@
+import * as AuthContract from "@yielded/auth/AuthContract";
 import { Schema } from "effect";
-import * as AuthContract from "effect-auth/AuthContract";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
 
 // Shared with the browser: schemas and selected actions only.

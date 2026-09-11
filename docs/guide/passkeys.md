@@ -13,8 +13,8 @@ browser to authenticate, and verify the response on your server.
 
 ```ts [passkey-contract.ts]
 import { Schema } from "effect";
-import * as AuthContract from "effect-auth/AuthContract";
-import { makePasskeyContract } from "effect-auth/PasskeyContract";
+import * as AuthContract from "@yielded/auth/AuthContract";
+import { makePasskeyContract } from "@yielded/auth/PasskeyContract";
 
 export const PasskeyApi = AuthContract.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
@@ -45,7 +45,7 @@ the named server call nor the browser payload includes that credential. The
 ## Enable passkeys
 
 ```ts [auth.ts]
-import { Auth, Passkey, Sessions } from "effect-auth";
+import { Auth, Passkey, Sessions } from "@yielded/auth";
 
 import { PasskeyApi } from "./passkey-contract";
 
@@ -84,7 +84,7 @@ privately; keep it associated with this flow.
 ## Ask the browser to authenticate
 
 Inside a scoped browser Effect, import `makeSimpleWebAuthnPasskeyBrowser` from
-`effect-auth/PasskeyBrowser` and use the public `started` result:
+`@yielded/auth/PasskeyBrowser` and use the public `started` result:
 
 <!-- prettier-ignore -->
 ```ts
@@ -116,7 +116,7 @@ The client exposes the same calls as `client.auth.signIn(...)` and
 ## Install the server verifier
 
 ```ts [passkey-protocol.ts]
-import { layerSimpleWebAuthnPasskeyProtocol } from "effect-auth/PasskeySimpleWebAuthn";
+import { layerSimpleWebAuthnPasskeyProtocol } from "@yielded/auth/PasskeySimpleWebAuthn";
 
 export const PasskeyProtocolLive = layerSimpleWebAuthnPasskeyProtocol({
   profiles: [
@@ -143,11 +143,11 @@ Keep the verifier profile consistent with the method's relying-party configurati
 
 ## Registration and management
 
-| Task                                   | Strategy and methods                                                             |
-| -------------------------------------- | -------------------------------------------------------------------------------- |
-| Create an account with a passkey       | `Passkey.makeRegistration` → `register`, `completeRegistration`.                 |
-| Add, list, rename, or remove a passkey | `Passkey.makeManagement` and its authenticated operations.                       |
-| Confirm a protected password change    | `effect-auth/PasskeyPassword` binds the assertion to a prepared password intent. |
+| Task                                   | Strategy and methods                                                               |
+| -------------------------------------- | ---------------------------------------------------------------------------------- |
+| Create an account with a passkey       | `Passkey.makeRegistration` → `register`, `completeRegistration`.                   |
+| Add, list, rename, or remove a passkey | `Passkey.makeManagement` and its authenticated operations.                         |
+| Confirm a protected password change    | `@yielded/auth/PasskeyPassword` binds the assertion to a prepared password intent. |
 
 These require explicit application authority. A registration ceremony must not
 silently become a login ceremony or link an existing account. See

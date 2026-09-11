@@ -1,6 +1,3 @@
-import { sql } from "drizzle-orm";
-import { bigint, boolean, pgTable, text, timestamp, uuid, uniqueIndex } from "drizzle-orm/pg-core";
-import { Schema } from "effect";
 import {
   requiredPasskeyCredentialConstraints,
   requiredPasskeyManagementConstraints,
@@ -10,9 +7,12 @@ import {
   type PasskeyManagementMapping,
   type PasskeyRegistrationMapping,
   type PasskeyWriteTables,
-} from "effect-auth/Drizzle";
-import { PasskeyCredential, PasskeyMethodPolicy, PasskeyProfile } from "effect-auth/Passkey";
-import { SubjectId } from "effect-auth/Schema";
+} from "@yielded/auth/Drizzle";
+import { PasskeyCredential, PasskeyMethodPolicy, PasskeyProfile } from "@yielded/auth/Passkey";
+import { SubjectId } from "@yielded/auth/Schema";
+import { sql } from "drizzle-orm";
+import { bigint, boolean, pgTable, text, timestamp, uuid, uniqueIndex } from "drizzle-orm/pg-core";
+import { Schema } from "effect";
 
 export const subject = pgTable("studio_passkey_subject", {
   id: uuid().primaryKey(),

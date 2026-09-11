@@ -1,6 +1,6 @@
+import * as Auth from "@yielded/auth/Auth";
+import * as PhoneOtp from "@yielded/auth/PhoneOtp";
 import { Encoding, Redacted, Schema } from "effect";
-import * as Auth from "effect-auth/Auth";
-import * as PhoneOtp from "effect-auth/PhoneOtp";
 
 import { lifecyclePolicy } from "./phone-sqlite-schema";
 const budget = { limit: 30, windowMillis: 60_000 };

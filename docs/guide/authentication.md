@@ -4,7 +4,7 @@ description: See how methods, sessions, and application services connect.
 
 # How it fits together
 
-Your app owns users and storage. Effect Auth verifies authentication methods and
+Your app owns users and storage. Yielded Auth verifies authentication methods and
 issues sessions through those services.
 
 ```text

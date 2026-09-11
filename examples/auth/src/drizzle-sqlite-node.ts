@@ -1,8 +1,6 @@
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import { DateTime, Duration, Effect, Schema } from "effect";
-import { requiredAuthConstraints, type AuthTables } from "effect-auth/Drizzle";
-import type { makeAuthServices } from "effect-auth/DrizzleSqliteNode";
-import { OAuthState } from "effect-auth/OAuth";
+import { requiredAuthConstraints, type AuthTables } from "@yielded/auth/Drizzle";
+import type { makeAuthServices } from "@yielded/auth/DrizzleSqliteNode";
+import { OAuthState } from "@yielded/auth/OAuth";
 import {
   ConsumeChallenge,
   ConsumeRegistration,
@@ -10,7 +8,9 @@ import {
   NewRegistration,
   PendingRegistration,
   TokenDigest,
-} from "effect-auth/Schema";
+} from "@yielded/auth/Schema";
+import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { DateTime, Duration, Effect, Schema } from "effect";
 import type * as CoreSqlClient from "effect/unstable/sql/SqlClient";
 
 export const challenges = sqliteTable(

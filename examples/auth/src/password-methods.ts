@@ -1,11 +1,11 @@
 import { BunRuntime } from "@effect/platform-bun";
+import { AuthRequest } from "@yielded/auth/Auth";
+import { LifecycleHooks } from "@yielded/auth/Hooks";
+import { guest, type AuthCredentialCommand } from "@yielded/auth/Operations";
+import { CompromisedPasswords } from "@yielded/auth/Password";
+import { EmailProofDelivery, type ProofDeliveryMessage } from "@yielded/auth/Proofs";
+import { layerWebCrypto } from "@yielded/auth/WebCrypto";
 import { DateTime, Effect, Encoding, Layer, Redacted } from "effect";
-import { AuthRequest } from "effect-auth/Auth";
-import { LifecycleHooks } from "effect-auth/Hooks";
-import { guest, type AuthCredentialCommand } from "effect-auth/Operations";
-import { CompromisedPasswords } from "effect-auth/Password";
-import { EmailProofDelivery, type ProofDeliveryMessage } from "effect-auth/Proofs";
-import { layerWebCrypto } from "effect-auth/WebCrypto";
 
 import {
   makePasswordConsumer,

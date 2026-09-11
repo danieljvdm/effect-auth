@@ -1,15 +1,15 @@
-import { Schema } from "effect";
-import * as Hooks from "effect-auth/Hooks";
-import * as Http from "effect-auth/OperationHttp";
-import { makeOperation } from "effect-auth/Operations";
+import * as Hooks from "@yielded/auth/Hooks";
+import * as Http from "@yielded/auth/OperationHttp";
+import { makeOperation } from "@yielded/auth/Operations";
 import {
   makePasskeyContract,
   makePasskeyRegistrationContract,
   makePasskeyManagementContract,
-} from "effect-auth/PasskeyContract";
-import { SubjectId } from "effect-auth/Schema";
-import { makeSessionContract } from "effect-auth/SessionContract";
-import { makeTotpContract } from "effect-auth/TotpContract";
+} from "@yielded/auth/PasskeyContract";
+import { SubjectId } from "@yielded/auth/Schema";
+import { makeSessionContract } from "@yielded/auth/SessionContract";
+import { makeTotpContract } from "@yielded/auth/TotpContract";
+import { Schema } from "effect";
 
 import { StudioClaims, registrationSchema } from "./studio-models";
 export const sessions = makeSessionContract("studio/Auth/sessions", StudioClaims);

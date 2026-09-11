@@ -104,12 +104,12 @@ export const verifyPackageConsumers = Effect.fn("verifyPackageConsumers")(functi
   yield* fs.copy(path.join(source, "test/packaging"), path.join(stage, "fixtures"));
 
   // Only required dependencies are installed. An accidental optional import must fail.
-  for (const name of ["effect-auth", "effect", ...Object.keys(manifest.dependencies ?? {})]) {
+  for (const name of ["@yielded/auth", "effect", ...Object.keys(manifest.dependencies ?? {})]) {
     const link = path.join(stage, "node_modules", name);
 
     yield* fs.makeDirectory(path.dirname(link), { recursive: true });
     yield* fs.symlink(
-      name === "effect-auth"
+      name === "@yielded/auth"
         ? destination
         : yield* fs.realPath(path.join(source, "node_modules", name)),
       link,
@@ -166,9 +166,9 @@ export const verifyPackageConsumers = Effect.fn("verifyPackageConsumers")(functi
           "--input-type=module",
           "--eval",
           `import assert from "node:assert/strict";
-const root = await import("effect-auth");
+const root = await import("@yielded/auth");
 for (const [name, namespace] of Object.entries(root)) {
-  const direct = await import("effect-auth/" + name);
+  const direct = await import("@yielded/auth/" + name);
   assert.strictEqual(namespace, direct, name + " must be a native module namespace");
 }
 const { Effect } = await import("effect");

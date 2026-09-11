@@ -1,7 +1,7 @@
+import * as AuthAtom from "@yielded/auth/Atom";
+import * as AuthContract from "@yielded/auth/AuthContract";
+import * as Client from "@yielded/auth/Client";
 import { Context, Deferred, Effect, Layer, Schema, SchemaGetter, Stream } from "effect";
-import * as AuthAtom from "effect-auth/Atom";
-import * as AuthContract from "effect-auth/AuthContract";
-import * as Client from "effect-auth/Client";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { expect, test } from "vite-plus/test";
 

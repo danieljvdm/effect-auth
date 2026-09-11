@@ -1,6 +1,6 @@
+import { Auth, Sessions } from "@yielded/auth";
+import * as AuthHttp from "@yielded/auth/Http";
 import { Effect, Layer } from "effect";
-import { Auth, Sessions } from "effect-auth";
-import * as AuthHttp from "effect-auth/Http";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 import { Claims, ProfileApi, SessionHttp } from "./session-contract";

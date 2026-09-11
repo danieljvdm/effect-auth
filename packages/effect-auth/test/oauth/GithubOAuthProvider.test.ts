@@ -1,6 +1,6 @@
 import { it as effectIt } from "@effect/vitest";
+import { SubjectId } from "@yielded/auth/Schema";
 import { Duration, Effect, Option, Redacted, Schema } from "effect";
-import { SubjectId } from "effect-auth/Schema";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vite-plus/test";
 

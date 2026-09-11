@@ -1,11 +1,11 @@
-import { Schema } from "effect";
 import {
   PasskeyProfile,
   PasskeyMethodPolicy,
   PasskeyManagementPolicy,
   PasskeyRequirement,
-} from "effect-auth/Passkey";
-import { TotpPolicy } from "effect-auth/TotpContract";
+} from "@yielded/auth/Passkey";
+import { TotpPolicy } from "@yielded/auth/TotpContract";
+import { Schema } from "effect";
 
 /** Shared application contracts contain no database, verifier, or secret configuration. */
 export const registrationSchema = Schema.Struct({

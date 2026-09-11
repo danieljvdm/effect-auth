@@ -1,7 +1,9 @@
 import { BunRuntime } from "@effect/platform-bun";
-import { Effect, Encoding, Layer, Redacted } from "effect";
-import { LifecycleHooks } from "effect-auth/Hooks";
-import { type AuthCredentialCommand, AuthCredentialCommandCollector } from "effect-auth/Operations";
+import { LifecycleHooks } from "@yielded/auth/Hooks";
+import {
+  type AuthCredentialCommand,
+  AuthCredentialCommandCollector,
+} from "@yielded/auth/Operations";
 import {
   EmailProofDelivery,
   IdentifierProofBinding,
@@ -11,8 +13,9 @@ import {
   SmsProofDelivery,
   type ProofDeliveryMessage,
   type ProofPolicy,
-} from "effect-auth/Proofs";
-import { layerWebCrypto } from "effect-auth/WebCrypto";
+} from "@yielded/auth/Proofs";
+import { layerWebCrypto } from "@yielded/auth/WebCrypto";
+import { Effect, Encoding, Layer, Redacted } from "effect";
 
 import { makeExampleProofAuthority } from "./proof-consumer";
 

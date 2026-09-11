@@ -1,10 +1,10 @@
 import { it as effectIt } from "@effect/vitest";
+import { AuthSession } from "@yielded/auth/AuthSession";
+import { AuthTokenCodec } from "@yielded/auth/AuthTokenCodec";
+import { EmailOtp } from "@yielded/auth/EmailOtp";
+import { AuthUnavailable } from "@yielded/auth/Errors";
+import { Email, PendingRegistration, RegistrationId, SubjectId } from "@yielded/auth/Schema";
 import { DateTime, Effect, FileSystem, Layer, Path, Redacted, Schema } from "effect";
-import { AuthSession } from "effect-auth/AuthSession";
-import { AuthTokenCodec } from "effect-auth/AuthTokenCodec";
-import { EmailOtp } from "effect-auth/EmailOtp";
-import { AuthUnavailable } from "effect-auth/Errors";
-import { Email, PendingRegistration, RegistrationId, SubjectId } from "effect-auth/Schema";
 import { Etag, HttpPlatform, HttpRouter } from "effect/unstable/http";
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
 import { afterAll, describe, expect } from "vite-plus/test";

@@ -1,10 +1,10 @@
+import * as AuthAtom from "@yielded/auth/Atom";
+import * as OperationHttp from "@yielded/auth/OperationHttp";
+import * as OperationHttpClient from "@yielded/auth/OperationHttpClient";
+import * as OperationHttpServer from "@yielded/auth/OperationHttpServer";
+import { guest, makeOperation, requireAuthenticated } from "@yielded/auth/Operations";
+import { SubjectId } from "@yielded/auth/Schema";
 import { Effect, Layer, Schema } from "effect";
-import * as AuthAtom from "effect-auth/Atom";
-import * as OperationHttp from "effect-auth/OperationHttp";
-import * as OperationHttpClient from "effect-auth/OperationHttpClient";
-import * as OperationHttpServer from "effect-auth/OperationHttpServer";
-import { guest, makeOperation, requireAuthenticated } from "effect-auth/Operations";
-import { SubjectId } from "effect-auth/Schema";
 import { Atom } from "effect/unstable/reactivity";
 
 import { staffSessions } from "./session-consumer";
