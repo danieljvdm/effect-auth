@@ -1,5 +1,11 @@
 # @yielded/auth
 
+## 0.1.0-beta.3
+
+### Patch Changes
+
+- [#12](https://github.com/yielded-dev/auth/pull/12) [`0f7bf1a`](https://github.com/yielded-dev/auth/commit/0f7bf1abe572a6b271b74c92173ecde906618287) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Configure GitHub OAuth App sign-in alongside generic OAuth/OIDC providers in one protocol layer using `gitHubOAuthAppProvider`, preserving GitHub response handling and captured provider generations.
+
 ## 0.1.0-beta.2
 
 ### Patch Changes
