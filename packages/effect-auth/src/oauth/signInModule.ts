@@ -29,17 +29,14 @@ import { makeOAuthAccounts } from "./accounts";
 import type { OAuthAccountsPolicy } from "./accountsModels";
 import { makeOAuthConnected } from "./connected";
 import type { OAuthConnectedPolicy } from "./connectedModels";
+import { completionResult } from "./contracts";
 import { OAuthProtocol } from "./OAuthProtocol";
 import { OAuthRegistrationIntents, OAuthRegistrationSettlement } from "./OAuthRegistrationIntents";
 import { OAuthReturnTargets } from "./OAuthReturnTargets";
 import { OAuthSignInPersistence, type PrepareOAuthCommit } from "./OAuthSignInPersistence";
 import { OAuthTransactionProtector } from "./OAuthTransactionProtector";
 import { makeOAuthRegistration } from "./registration";
-import {
-  OAuthRegistrationIntent,
-  OAuthRegistrationPolicy,
-  OAuthRegistrationRequired,
-} from "./registrationModels";
+import { OAuthRegistrationIntent, OAuthRegistrationPolicy } from "./registrationModels";
 import * as registrationSecrets from "./registrationSecrets";
 import {
   OAuthConfigurationError,
@@ -146,11 +143,7 @@ export const makeOAuthMethod = <
     }
   >(`effect-auth/oauth/${moduleId.length}:${moduleId}/Claims`);
 
-  const CompletionResult = Schema.Union([
-    Schema.Struct({ completion: sessions.CompletionResult, returnTarget: OAuthReturnTarget }),
-    Schema.TaggedStruct("Cancelled", { returnTarget: OAuthReturnTarget }),
-    OAuthRegistrationRequired,
-  ]);
+  const CompletionResult = completionResult(sessions.CompletionResult);
 
   type CompletionResult = typeof CompletionResult.Type;
 

@@ -30,6 +30,9 @@ export interface ActionOptions<
   readonly method?: string;
   readonly strategy?: string;
   readonly requestFields?: Readonly<Record<string, CredentialSlot>>;
+  /** This action completes an OAuth browser callback. The HTTP host can mount it
+   * directly; it must validate the original state and private request binding. */
+  readonly oauthCallback?: true;
   readonly subject?: {
     fromSuccess(value: Success["Type"]): string | null | undefined;
   };
@@ -180,6 +183,7 @@ const bindAction = <
     method: definition.method ?? name,
     strategy: definition.strategy,
     requestFields,
+    oauthCallback: definition.oauthCallback,
     subject: definition.subject,
   });
 };
@@ -206,6 +210,7 @@ export interface AnyAuthAction {
   readonly method: string;
   readonly strategy: string | undefined;
   readonly requestFields: Readonly<Record<string, CredentialSlot>>;
+  readonly oauthCallback?: true | undefined;
   readonly subject?: { fromSuccess(value: unknown): string | null | undefined } | undefined;
 }
 
@@ -320,6 +325,7 @@ export const make = <
   // Each entry is bound with the exact schemas from the corresponding definition.
   return Object.freeze({
     namespace,
+    basePath,
     claims: options.claims,
     sessions,
     actions: Object.freeze(actions) as unknown as BoundActions<typeof defaults & Additional>,

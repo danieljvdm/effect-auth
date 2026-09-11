@@ -4,6 +4,7 @@ import { it } from "@effect/vitest";
 import * as GitHub from "@yielded/auth/GitHub";
 import {
   OAuthCallbackId,
+  OAuthRedirectUri,
   OAuthIssuer,
   OAuthProviderKey,
   OAuthProtocol,
@@ -39,12 +40,17 @@ const loadGitHubProtocol = (options: GitHub.Options) =>
   OAuthProtocol.pipe(Effect.provide(GitHub.layer(options)));
 
 const github = (configurationGeneration?: number, issuance?: "active" | "retired") =>
-  GitHub.provider({
-    ...(configurationGeneration === undefined ? {} : { configurationGeneration }),
-    ...(issuance === undefined ? {} : { issuance }),
+  GitHub.gitHubOAuthAppProvider({
+    configurationGeneration: configurationGeneration ?? 1,
+    issuance: issuance ?? "active",
     clientId: `github-${configurationGeneration ?? 1}`,
     clientSecret: Redacted.make(`github-secret-${configurationGeneration ?? 1}`),
-    redirectUri: "https://app.test/auth/github/callback",
+    callbacks: [
+      {
+        callbackId: OAuthCallbackId.make("github"),
+        redirectUri: OAuthRedirectUri.make("https://app.test/auth/github/callback"),
+      },
+    ],
   });
 
 const google = (configurationGeneration?: number, issuance?: "active" | "retired") =>

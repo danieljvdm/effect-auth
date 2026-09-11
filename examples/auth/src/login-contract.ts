@@ -151,40 +151,8 @@ export const LoginApi = AuthContract.make("example/social-auth", {
       strategy: "emailRegistration",
       requestFields: { requestBinding: "request-binding", credential: "proof-continuation" },
     }),
-    signIn: AuthContract.action({
-      payload: OAuth.OAuthSignInBegin,
-      success: OAuth.OAuthSignInAuthorization,
-      error: Failure,
-      mode: "mutation",
-      credentials: true,
-    }),
-    completeSignIn: AuthContract.action({
-      payload: Schema.Struct({
-        flowId: OAuth.OAuthSignInComplete.fields.flowId,
-        provider: OAuth.OAuthSignInComplete.fields.provider,
-        callbackId: OAuth.OAuthSignInComplete.fields.callbackId,
-        response: OAuth.OAuthCallbackResponse,
-      }),
-      success: Schema.Union([
-        Schema.Struct({
-          completion: sessions.CompletionResult,
-          returnTarget: OAuth.OAuthReturnTarget,
-        }),
-        Schema.TaggedStruct("Cancelled", { returnTarget: OAuth.OAuthReturnTarget }),
-        OAuth.OAuthRegistrationRequired,
-      ]),
-      error: Failure,
-      mode: "mutation",
-      replay: "single-use",
-      credentials: true,
-      requestFields: { requestBinding: "request-binding" },
-      subject: {
-        fromSuccess: (value) =>
-          "completion" in value && value.completion._tag === "Authenticated"
-            ? value.completion.session.subjectId
-            : undefined,
-      },
-    }),
+    signIn: AuthContract.oauthSignIn(),
+    completeSignIn: AuthContract.oauthCompleteSignIn(sessions),
     register: AuthContract.action({
       payload: Schema.Struct({
         reference: OAuth.OAuthRegistrationReference,

@@ -1,4 +1,11 @@
-export { layer, type Options, type Provider } from "./oauth/openid-client/layer";
+export {
+  layer,
+  provider,
+  type Options,
+  type Provider,
+  type ProviderOptions,
+  type ProviderRegistration,
+} from "./oauth/openid-client/layer";
 
 export {
   type OpenIdClientAuthentication,

@@ -3,6 +3,8 @@ export {
   layerConnected,
   provider,
   type Options,
+  type ProviderOptions,
+  type ProviderRegistration,
   type Registration,
   type ConnectedOptions,
   type ConnectedRegistration,
