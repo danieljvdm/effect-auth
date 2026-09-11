@@ -1,5 +1,11 @@
 # @yielded/auth
 
+## 0.1.0-beta.2
+
+### Patch Changes
+
+- [#9](https://github.com/yielded-dev/auth/pull/9) [`4e241f0`](https://github.com/yielded-dev/auth/commit/4e241f0dd31a4f857e5d3a17043c17139d540e8f) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Point package source and issue links to the `yielded-dev/auth` repository. Link the package homepage to `yielded.dev/auth`.
+
 ## 0.1.0-beta.1
 
 ### Minor Changes
