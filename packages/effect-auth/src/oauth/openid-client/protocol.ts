@@ -27,6 +27,7 @@ import {
   type OpenIdClientConfigurationError,
   type OpenIdClientOAuthProtocolOptions,
 } from "./models";
+import { decodeOidcProfile } from "./profile";
 import { boundedFetch } from "./transport";
 
 const beginInput = Schema.Struct({
@@ -357,8 +358,11 @@ export const makeOpenIdClientOAuthProtocol = Effect.fn("makeOpenIdClientOAuthPro
           )
             return yield* rejected();
 
+          const profile = yield* decodeOidcProfile(exchanged.claims);
+
           return yield* snapshotOAuth(OAuthVerifiedExternalIdentity, {
             identity: { provider: provider.provider, issuer: provider.issuer, subject: claims.sub },
+            ...(profile === undefined ? {} : { profile }),
             ...(claims.auth_time === undefined
               ? {}
               : {

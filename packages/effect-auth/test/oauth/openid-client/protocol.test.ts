@@ -11,10 +11,11 @@ import {
 } from "@yielded/auth/OAuth";
 import * as OpenIdClient from "@yielded/auth/OpenIdClient";
 import { RequestBindingFlowId } from "@yielded/auth/Operations";
-import { DateTime, Deferred, Effect, Fiber, Redacted } from "effect";
+import { DateTime, Deferred, Effect, Fiber, Redacted, Schema } from "effect";
 import type { CustomFetch } from "openid-client";
 import { describe, expect } from "vite-plus/test";
 
+import { githubProfile, normalizedGithubProfile } from "../../fixtures/github-profile";
 import { expectTag } from "../../helpers/oauth";
 
 const keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -157,7 +158,159 @@ const exchange = Effect.fn("test.exchange")(function* (
 });
 
 describe("GitHub OAuth App and Google OIDC composition", () => {
-  it.live("dispatches both providers without exposing email or tokens", () =>
+  it.live(
+    "retains every documented GitHub user field, nulls and false values in a detached profile",
+    () =>
+      Effect.gen(function* () {
+        const transport = makeTransport({
+          userResponse: () => json({ ...githubProfile, access_token: "must-not-be-profile-data" }),
+        });
+
+        const protocol = yield* loadProtocol({
+          providers: [github()],
+          timeoutSeconds: 1,
+          fetch: transport.fetch,
+        });
+
+        const result = yield* exchange(protocol, yield* begin(protocol, "github"));
+
+        expect(result.identity).toEqual({
+          provider: "github",
+          issuer: "https://github.com/login/oauth",
+          subject: "42",
+        });
+        expect(result.profile).toEqual(normalizedGithubProfile);
+        // oxlint-disable-next-line no-restricted-properties -- Refine the generic provider JSON with the public GitHub Schema.
+        expect(
+          yield* Schema.decodeUnknownEffect(GitHub.GitHubUserProfile)(
+            result.profile!.providerData!,
+          ),
+        ).toEqual(githubProfile);
+        expect(Object.isFrozen(result.profile!.providerData)).toBe(true);
+        expect(Object.isFrozen(result.profile!.providerData!.plan)).toBe(true);
+        expect(JSON.stringify(result)).not.toContain("must-not-be-profile-data");
+        expect(JSON.stringify(result)).not.toContain("github-token-never-returned");
+        expect(result.profile).not.toHaveProperty("emailVerified");
+        expect(
+          transport.requests.filter((request) => request.url === "https://api.github.com/user"),
+        ).toHaveLength(1);
+        expect(transport.requests.some((request) => request.url.includes("/emails"))).toBe(false);
+      }),
+  );
+
+  for (const name of [undefined, null, "", "  "]) {
+    it.live(`uses the GitHub handle when name is ${JSON.stringify(name)}`, () =>
+      Effect.gen(function* () {
+        const transport = makeTransport({
+          userResponse: () => json({ id: 42, login: "octocat", name, email: null }),
+        });
+
+        const protocol = yield* loadProtocol({
+          providers: [github()],
+          timeoutSeconds: 1,
+          fetch: transport.fetch,
+        });
+
+        const result = yield* exchange(protocol, yield* begin(protocol, "github"));
+
+        expect(result.profile?.displayName).toBe("octocat");
+        expect(result.profile?.handle).toBe("octocat");
+        expect(result.profile?.providerData?.email).toBeNull();
+        expect(result.profile).not.toHaveProperty("email");
+      }),
+    );
+  }
+
+  for (const profile of [
+    { id: "42" },
+    { id: 42, name: 1 },
+    { id: 42, name: "x".repeat(257) },
+    { id: 42, followers: -1 },
+  ]) {
+    it.live(`rejects malformed or oversized GitHub fields: ${Object.keys(profile).join(",")}`, () =>
+      Effect.gen(function* () {
+        const transport = makeTransport({ userResponse: () => json(profile) });
+
+        const protocol = yield* loadProtocol({
+          providers: [github()],
+          timeoutSeconds: 1,
+          fetch: transport.fetch,
+        });
+
+        yield* expectTag(
+          exchange(protocol, yield* begin(protocol, "github")),
+          "OAuthProtocolRejected",
+        );
+      }),
+    );
+  }
+
+  it.live("retains standard OIDC user claims without protocol secrets or extra requests", () =>
+    Effect.gen(function* () {
+      const profile = {
+        name: "Full Name",
+        given_name: "Full",
+        family_name: "Name",
+        middle_name: "Middle",
+        nickname: "Nickname",
+        preferred_username: "member",
+        profile: "https://provider.test/member",
+        picture: "https://provider.test/avatar.png",
+        website: "https://member.test",
+        email: "member@example.test",
+        email_verified: false,
+        gender: "unspecified",
+        birthdate: "2000-01-01",
+        zoneinfo: "Europe/Paris",
+        locale: "fr-FR",
+        phone_number: "+33123456789",
+        phone_number_verified: true,
+        address: {
+          formatted: "Example address",
+          street_address: "1 Example Street",
+          locality: "Paris",
+          region: "IDF",
+          postal_code: "75001",
+          country: "FR",
+        },
+        updated_at: 1_700_000_000,
+      };
+
+      const transport = makeTransport({ claims: { ...profile, access_token: "not-a-user-claim" } });
+
+      const protocol = yield* loadProtocol({
+        providers: [google()],
+        timeoutSeconds: 1,
+        fetch: transport.fetch,
+      });
+
+      const started = yield* begin(protocol, "google");
+
+      transport.setNonce(started);
+      const result = yield* exchange(protocol, started);
+
+      expect(result.identity.subject).toBe("stable-google-sub");
+      expect(result.profile).toEqual({
+        displayName: "Full Name",
+        handle: "member",
+        avatarUrl: profile.picture,
+        profileUrl: profile.profile,
+        email: profile.email,
+        emailVerified: false,
+        providerData: profile,
+      });
+      expect(
+        yield* Schema.decodeEffect(OpenIdClient.OidcUserProfile)(result.profile!.providerData!),
+      ).toEqual(profile);
+      expect(Object.isFrozen(result.profile!.providerData!.address)).toBe(true);
+      expect(result.profile?.providerData).not.toHaveProperty("nonce");
+      expect(JSON.stringify(result)).not.toContain("not-a-user-claim");
+      expect(JSON.stringify(result)).not.toContain("google-token-never-returned");
+      expect(transport.requests.some((request) => request.url.includes("userinfo"))).toBe(false);
+    }),
+  );
+
+  it.live("preserves provider profiles separately from identity without exposing tokens", () =>
     Effect.gen(function* () {
       const transport = makeTransport({
         claims: { email: "member@gmail.com", email_verified: true, preferred_username: "member" },
@@ -187,10 +340,27 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
         ).toBe("S256");
       expect(yield* exchange(protocol, githubStart)).toEqual({
         identity: { provider: "github", issuer: "https://github.com/login/oauth", subject: "42" },
-        profile: { displayName: "octocat" },
+        profile: {
+          displayName: "octocat",
+          handle: "octocat",
+          email: "untrusted-profile@example.test",
+          providerData: { id: 42, login: "octocat", email: "untrusted-profile@example.test" },
+        },
       });
       expect(yield* exchange(protocol, googleStart)).toEqual({
         identity: { provider: "google", issuer: googleIssuer, subject: "stable-google-sub" },
+        profile: {
+          displayName: "Google Member",
+          handle: "member",
+          email: "member@gmail.com",
+          emailVerified: true,
+          providerData: {
+            name: "Google Member",
+            email: "member@gmail.com",
+            email_verified: true,
+            preferred_username: "member",
+          },
+        },
       });
       expect(transport.requests.filter((request) => request.url.endsWith("/user"))).toHaveLength(1);
       expect(transport.requests.some((request) => request.url.includes("emails"))).toBe(false);
@@ -426,7 +596,12 @@ describe("GitHub OAuth App and Google OIDC composition", () => {
         }),
       ).toEqual({
         identity: { provider: "github", issuer: githubIssuer, subject: "42" },
-        profile: { displayName: "octocat" },
+        profile: {
+          displayName: "octocat",
+          handle: "octocat",
+          email: "untrusted-profile@example.test",
+          providerData: { id: 42, login: "octocat", email: "untrusted-profile@example.test" },
+        },
       });
       expect(transport.requests.filter((request) => request.method === "POST")).toHaveLength(1);
     }),

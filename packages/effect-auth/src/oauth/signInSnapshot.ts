@@ -16,7 +16,8 @@ export const snapshotOAuthSync = <S extends Schema.Codec<unknown, unknown, never
   value: S["Type"],
 ): S["Type"] => {
   try {
-    const codec = Schema.toCodecJson(Schema.toType(schema));
+    // JSON fields can otherwise retain nested input references through validation.
+    const codec = Schema.fromJsonString(Schema.toCodecJson(Schema.toType(schema)));
     const result = Schema.decodeSync(codec)(Schema.encodeSync(codec)(value));
 
     freezeOAuth(result);

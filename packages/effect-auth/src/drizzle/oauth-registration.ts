@@ -11,6 +11,7 @@ import {
 } from "../oauth/registrationModels";
 import {
   OAuthCredentialSnapshot,
+  OAuthDisplayProfile,
   OAuthSignInTransactionContext,
   type OAuthExternalIdentity,
 } from "../oauth/signInModels";
@@ -25,6 +26,7 @@ import { invariant, oauthIdentityKey, sameIdentity, storage } from "./oauth-stat
 export const intentStorage = storage(OAuthRegistrationIntent);
 const decisionStorage = storage(OAuthRegistrationDecision);
 const contextStorage = storage(OAuthSignInTransactionContext);
+const profileStorage = storage(Schema.NullOr(OAuthDisplayProfile));
 
 const reservationStorage = storage(
   Schema.Struct({
@@ -174,6 +176,8 @@ export const settleRegistrationIntent = (mapping: any, input: any) =>
 
         invariant(
           sameIdentity(intent.identity, identity) &&
+            profileStorage.encode(intent.profile ?? null) ===
+              profileStorage.encode(input.identity.profile ?? null) &&
             intent.claimId === input.claim.claimId &&
             intent.claimedAtMillis === input.claim.claimedAtMillis &&
             contextStorage.encode(c) === contextStorage.encode(context),

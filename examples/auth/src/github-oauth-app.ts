@@ -21,7 +21,7 @@ import type { HttpClientResponse } from "effect/unstable/http";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 
 // Application authority is local. Neither registration data nor Claims needs email.
-const Claims = Schema.Struct({ role: Schema.Literal("member") });
+const Claims = Schema.Struct({ role: Schema.Literal("member"), displayName: Schema.String });
 
 const Registration = Schema.Struct({
   displayName: Schema.NonEmptyString.check(Schema.isMaxLength(128)),
@@ -68,7 +68,13 @@ const claimsLayer = Layer.effect(
     const { claims } = yield* GitHubReferenceAccounts;
 
     return githubSignIn.ClaimsForOAuth.of({
-      resolve: (credential) => claims(credential.revision.subjectId),
+      resolve: (credential, verified) =>
+        claims(credential.revision.subjectId).pipe(
+          Effect.map((local) => ({
+            ...local,
+            displayName: verified.profile?.displayName ?? local.displayName,
+          })),
+        ),
     });
   }),
 );
@@ -118,12 +124,7 @@ export const githubSignInLayer = (input: {
   );
 };
 
-const userProfile = Schema.Struct({
-  id: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
-  login: Schema.NonEmptyString.check(Schema.isMaxLength(256)),
-});
-
-const decodeUserProfile = Schema.decodeEffect(Schema.fromJsonString(userProfile));
+const decodeUserProfile = Schema.decodeEffect(Schema.fromJsonString(GitHub.GitHubUserProfile));
 
 const readUserProfile = Effect.fn("example.GitHub.readUserProfile")(
   function* (response: HttpClientResponse.HttpClientResponse) {
