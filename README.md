@@ -101,7 +101,7 @@ Use `auth.runtime` for client workflows that share the atoms' instance, or provi
 [getting-started guide](docs/guide/getting-started.md) and
 [HTTP and client guide](docs/guide/http-and-client.md) show the full composition.
 
-Start with the [documentation](https://effect-auth.com) and
+Start with the [documentation](https://yielded.dev/auth/) and
 [consumer examples](examples/auth). The public library lives in
 [`packages/effect-auth`](packages/effect-auth); examples are leaf workspaces.
 

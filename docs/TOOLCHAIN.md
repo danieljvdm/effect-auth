@@ -105,9 +105,14 @@ produces the static site; `vp run docs:preview` serves that build. The home page
 includes the root README's shared contract, server, and client examples. Guides show feature setup and usage.
 This contributor guide stays in the repository and is excluded from the public site.
 
-`alchemy.run.ts` deploys the site to `https://effect-auth.com` through the
+`alchemy.run.ts` deploys the site to `https://yielded.dev/auth/` through the
 `effect-auth-docs` Cloudflare Worker at stage `prod`. It uses the account-wide
-Cloudflare state store, matching Effect Agent.
+Cloudflare state store, matching Effect Agent. The VitePress base and Worker asset
+base both use `/auth/`. The Worker route covers the `/auth` prefix;
+other paths on `yielded.dev` remain available for sibling projects. The stack
+owns the proxied apex DNS placeholder until a shared Yielded site provides an origin.
+The old `effect-auth.com` domain remains attached for TLS and permanently redirects
+paths and query strings to the new docs location.
 Set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in your environment, then run
 `vp run docs:plan --stage prod` to review changes or
 `vp run docs:deploy --stage prod --yes` to deploy. Alchemy builds the docs and
@@ -117,4 +122,4 @@ The `Deploy docs` workflow runs on relevant changes to `main` and supports manua
 dispatch. Configure repository secrets `CLOUDFLARE_API_TOKEN` and
 `CLOUDFLARE_ACCOUNT_ID`; Alchemy resolves the shared state-store credentials from
 the account's Secrets Store. The token must also be able to manage the Worker and
-its custom domain in the selected account.
+its custom domain, zone routes, DNS record, and legacy redirect rule in the selected account.
