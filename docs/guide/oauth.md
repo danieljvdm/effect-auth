@@ -5,8 +5,7 @@ description: Configure GitHub OAuth, redirect to sign in, and complete the callb
 # OAuth
 
 Configure a provider, start sign-in, and exchange the callback for an application
-session. This example uses a GitHub OAuth App. Email OTP can share the same
-Auth service and sessions; Google OIDC is an optional second OAuth provider.
+session. This example uses a GitHub OAuth App.
 
 The calls below use the local service inside existing Effects. A browser client
 needs explicitly declared [shared actions](./http-and-client#expose-another-method),
@@ -75,131 +74,47 @@ export const GitHubProtocolLive = Layer.unwrap(
 Register that exact callback URL in your GitHub OAuth App. The adapter requires
 `openid-client`. Other OAuth/OIDC providers use `@yielded/auth/OpenIdClient`.
 
-## Combine GitHub with Google OIDC
+## Combine OAuth providers
 
-Install one protocol Layer containing all OAuth providers. Merging separate GitHub
-and OpenIdClient Layers replaces the same `OAuthProtocol` service; it does not
-combine their provider tables. `gitHubOAuthAppProvider` retains GitHub's specialized
-token receipt and error handling inside the generic provider list:
+Use one provider list: separate protocol Layers replace the same `OAuthProtocol`
+service. `gitHubOAuthAppProvider` preserves GitHub's response handling within it.
 
 ```ts [providers.ts]
 import { gitHubOAuthAppProvider } from "@yielded/auth/GitHub";
 import { openIdClientOAuthProtocolLayer } from "@yielded/auth/OpenIdClient";
-import {
-  OAuthCallbackId,
-  OAuthIssuer,
-  OAuthProviderKey,
-  OAuthRedirectUri,
-} from "@yielded/auth/OAuth";
 
-import { githubRegistration, googleClientId, googleClientSecret } from "./auth-config";
+import { githubRegistration, googleOidcRegistration } from "./auth-config";
 
 export const ProvidersLive = openIdClientOAuthProtocolLayer({
-  providers: [
-    gitHubOAuthAppProvider(githubRegistration),
-    {
-      provider: OAuthProviderKey.make("google"),
-      protocol: "oidc",
-      configurationGeneration: 1,
-      issuance: "active",
-      issuer: OAuthIssuer.make("https://accounts.google.com"),
-      responseIssuerMode: "required",
-      clientId: googleClientId,
-      authentication: { method: "client_secret_post", secret: googleClientSecret },
-      callbacks: [
-        {
-          callbackId: OAuthCallbackId.make("google"),
-          redirectUri: OAuthRedirectUri.make("https://app.example.com/auth/google/callback"),
-        },
-      ],
-      scopes: ["openid"],
-      idTokenSignedResponseAlg: "RS256",
-    },
-  ],
+  providers: [gitHubOAuthAppProvider(githubRegistration), googleOidcRegistration],
   timeoutSeconds: 10,
 });
 ```
 
-`githubRegistration` has the same fields as one registration above;
-`googleClientSecret` is a `Redacted<string>` loaded from server configuration.
-Replace the example origin and register each exact callback with its provider.
-The [typechecked server example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-server.ts)
-loads actual client IDs and secrets through `Config`; Google is enabled only with
-`google: true`. Keep provider configuration out of browser imports.
-
-GitHub requests only `read:user`, with no repository or private-email permission.
-Google requests `openid` for Gmail and Workspace account sign-in, with no mailbox
-access. Neither provider's email is required or returned as verified contact evidence.
-The local subject binds to the immutable `(provider, issuer, subject)` tuple;
-Google's `sub` is the identity key, not email. See the official
-[Google OIDC guide](https://developers.google.com/identity/openid-connect/openid-connect),
-[discovery metadata](https://accounts.google.com/.well-known/openid-configuration), and
-[GitHub scope definitions](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps).
-
-One active generation per provider issues new flows. Retain retired generations
-and their credentials through all issued flow horizons; completion never substitutes
-new credentials. Duplicate generations and callback reuse across issuers without
-issuer responses fail configuration. Both providers use PKCE S256; OIDC also checks
-nonce, issuer, audience, signature and token time. Google callbacks must include
-`iss`; GitHub's configured response mode rejects it. Malformed responses fail closed,
-and transport failures remain unavailable rather than authorizing another exchange.
-Generic OIDC entries and custom OAuth `identitySource.decodeIdentity` hooks remain
-available; no application dispatcher is required.
+The [server example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-server.ts)
+shows both registration shapes; `google: true` enables optional Google OIDC.
+Replace its example origin and configure server-only credentials and exact callbacks.
+GitHub uses [`read:user`](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)
+without repository access; Google uses [`openid`](https://developers.google.com/identity/openid-connect/openid-connect)
+without mailbox access. Retain retired configurations until their outstanding flows expire.
 
 ## Email OTP and GitHub in one application
 
-Use `Email.makeCode`, `Email.makeRegistration`, and `OAuth.makeRegistration` under
-one `Auth.make`, with one `Sessions.stateful()` configuration. Email uses
-`EmailProofDelivery` from `@yielded/auth/Proofs`, independently of the OAuth protocol.
-It does not need a second OAuth provider or a Google client registration. A single
-GitHub installation can continue using `gitHubOAuthAppProtocolLayer`.
-
-The typechecked [shared contract](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-contract.ts),
+Compose `Email.makeCode`, `Email.makeRegistration`, and `OAuth.makeRegistration`
+under one `Auth.make` with `Sessions.stateful()`. The
+[contract](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-contract.ts),
 [server](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-server.ts), and
-[client/Atom workflows](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-client.ts)
-show public signup, both sign-in methods, stateful session cookies, and merging an
-existing `HttpRouter` with the auth routes. The host supplies the durable stores,
-identity authority, email delivery, and secret keyrings; this is a composition example,
-not a configured hosted application.
+[client](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-client.ts)
+share sessions, HTTP cookies, and Atom workflows. Supply durable stores, provisioning,
+keyrings, and [email delivery](./codes#supply-the-services). Google is optional.
 
-The contract maps named email actions to the `email` and `emailRegistration`
-strategies. OAuth actions select the `social` strategy through the default. All
-methods share `client.auth.getSession()`, `client.auth.signOut()`, `auth.session`,
-and `auth.signOut`. Multi-step email and redirect workflows live in Effect atoms.
-A successful authentication retires the previous account's workflow state; render
-the new session rather than chaining component promises after completion.
+`RegistrationRequired` leads to `auth.register` with the original flow ID, returned
+reference, fresh command ID, and signup data. After `RegistrationAccepted`, start a
+new sign-in; resolve `ProvisioningPending` through your application. Provision stable
+local subjects bound to the provider/issuer/subject tuple, not provider email.
 
-For OAuth signup, `completeSignIn` returns `RegistrationRequired`. Submit the
-reference, original flow ID, a fresh command ID and the application's registration
-data through `auth.register`; the server supplies the private registration bearer
-and original binder from cookies. The durable registration owner persists and
-rechecks the original external tuple with the application data, allocating one
-stable local subject and credential or protected pending work. Display name in this
-example is an application signup field, not provider-verified evidence. No email or
-provider profile is needed. Exact replay uses the stored decision; unknown commit
-outcomes never permit re-provisioning or repeating the provider exchange.
-
-Registration accepts the account but does not issue a session. After
-`RegistrationAccepted`, start a fresh sign-in flow; handle `ProvisioningPending`
-through application-owned recovery authority before signing in. Email registration
-likewise uses begin → request → verify → complete before a fresh sign-in. Use the
-[existing email proof controls](./codes) for expiry, attempts, delivery and abuse
-budgets. One browser cookie slot supports one active authentication flow at a time.
-
-Keep login and callback pages public and inert on GET. Continue protecting private
-HTML/assets and application APIs with session checks; `http.middleware` supplies
-request context but does not itself require authentication. Public generated-site
-hosts can remain separate public routes. Remove a previous access gateway only
-when the replacement routes and session checks are ready.
-
-For an explicitly authorized fresh-start adoption, allocate new stable local subjects
-with explicit provider or verified-email bindings. The application's reset scope is
-its old accounts, auth/session/proof records, per-account trips and conversations,
-settings, encrypted saved API keys, and browser caches. Retire generated sites and
-build/address-directory artifacts that belong to those discarded trips deliberately.
-Do not attach old storage namespaces to new subjects. Users re-register and re-enter
-their API keys; matching emails never link accounts. Execute that reset as a separate
-application release decision, after preparing the replacement login and protection.
+Keep login and callback GETs public and inert. Private routes must call
+`auth.requireSession()`; `http.middleware` only supplies request context.
 
 ## Redirect to GitHub
 

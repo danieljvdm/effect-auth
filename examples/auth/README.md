@@ -17,10 +17,12 @@ All consumer files are checked by the root validation command. TOTP adapter
 fixtures that exercise private implementation helpers live under the library’s
 `test/fixtures`, where they remain typechecked.
 
-`login-contract.ts`, `login-server.ts`, and `login-client.ts` compose email OTP
-and GitHub signup/sign-in through one Auth service, stateful sessions, HTTP cookies,
-and Effect Atom workflows. Google OIDC is optional. The host supplies durable
-registration/session/proof adapters and `EmailProofDelivery`, real provider
-credentials, and keyrings. These files are typechecked composition examples;
-`example:email-methods` is the existing runnable email journey. See the
-[OAuth guide](../../docs/guide/oauth.md) for callback and provider setup.
+`login-contract.ts`, `login-server.ts`, and `login-client.ts` compose email OTP +
+GitHub with shared sessions, HTTP, and Atom workflows. Google is optional.
+See the [OAuth guide](../../docs/guide/oauth.md) for setup.
+
+For a later clean-start cutover, reset old accounts, auth/session/proof state,
+per-account trips/conversations/settings/encrypted API keys, and browser caches.
+Retire associated generated sites and build/address records. Allocate new subjects
+and storage namespaces; users re-register and re-enter API keys. The consumer
+release owns this reset; these examples perform no deletion.

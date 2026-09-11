@@ -160,24 +160,12 @@ flow IDs must not reset account-level attempt budgets.
 Provide `EmailSignInTargets`, `AppAuth.strategies.email.ClaimsForEmail`,
 `ProofPersistence`, `EmailProofDelivery`, and `EmailReturnTargets`, plus session
 and request-binding services. Use an exact return-route allowlist.
+Implement `EmailProofDelivery.layer(vendor, send)` from `@yielded/auth/Proofs`
+with your chosen sender, template, and credentials.
 
 For new accounts use `Email.makeRegistration`; for verified-address management
 use `Email.makeAddresses`. Verification alone does not sign in or link an account.
 See [email persistence](../reference/adapters#email) for those transaction boundaries.
 
-## Combine codes with GitHub
-
-The [combined login example](./oauth#email-otp-and-github-in-one-application) uses
-`Email.makeCode` for existing accounts, `Email.makeRegistration` for public signup,
-and `OAuth.makeRegistration` for GitHub under one Auth service and session authority.
-Named contract actions select each strategy, so `Client.make` and `AuthAtom.make`
-share the HTTP and cookie boundary. Google is optional.
-
-Supply your renderer/provider through `EmailProofDelivery.layer(vendor, send)` from
-`@yielded/auth/Proofs`. The application chooses the vendor, template, sender and
-credentials; the library does not install an email sender. Report vendor acceptance
-accurately, keep codes out of telemetry, and claim an idempotency window only if
-the vendor guarantees it. Keep `ProofPersistence`, attempt and resend budgets,
-`HostIngressLimiter`, and the existing request-binding checks in place. An email OTP
-proves control of the submitted address; a GitHub profile email does not. Equal
-emails never authorize automatic linking of independently created accounts.
+See the [combined login example](./oauth#email-otp-and-github-in-one-application)
+to share Auth, sessions, and client methods with GitHub.
