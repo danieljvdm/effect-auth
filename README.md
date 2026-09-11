@@ -6,37 +6,92 @@ Effect Auth owns security-sensitive authentication behavior. Applications provid
 identity authority, persistence, protocol verification, and credential delivery.
 Optional adapters support Drizzle databases, Cloudflare, OAuth/OIDC, and WebAuthn.
 
-## Password sign-in
+## One API, server and client
 
-Define your session claims and authentication methods, then call them from an Effect:
+Define the shared contract in `auth-contract.ts`:
 
-<!-- #region password-sign-in -->
+<!-- #region auth-contract -->
 
-```ts
-import { Effect, Schema } from "effect";
-import { Auth, Password, Sessions } from "effect-auth";
+```ts [auth-contract.ts]
+import { Schema } from "effect";
+import * as AuthContract from "effect-auth/AuthContract";
 
-const AppAuth = Auth.make("app/Auth", {
+export const AuthApi = AuthContract.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
+  actions: (sessions) => ({ signIn: AuthContract.passwordSignIn(sessions) }),
+});
+```
+
+<!-- #endregion auth-contract -->
+
+Bind the server implementation and mount its HTTP routes:
+
+<!-- #region auth-server -->
+
+```ts [auth.ts]
+import { Layer } from "effect";
+import { Auth, Password, Sessions } from "effect-auth";
+import * as AuthHttp from "effect-auth/Http";
+
+import { AuthApi } from "./auth-contract";
+
+export const AppAuth = Auth.make(AuthApi, {
   sessions: Sessions.stateful(),
   strategies: { password: Password.make() },
   defaultStrategy: "password",
 });
 
-export const signIn = Effect.fn("app.signIn")(function* (email: string, password: string) {
-  const auth = yield* AppAuth;
-
-  return yield* auth.signIn({ email, password });
-});
+export const http = AuthHttp.make(AppAuth, { origin: "https://app.example.com" });
+export const AuthRoutes = http.routes().pipe(Layer.provide(AppAuth.layer));
 ```
 
-<!-- #endregion password-sign-in -->
+<!-- #endregion auth-server -->
 
-An `Authenticated` result contains a session with typed `claims.displayName`.
-Supply your persistence and account Layers to `AppAuth.layer`. The
-[HTTP adapter](docs/guide/http-and-client.md) supplies request credentials and cookie
-delivery; local methods such as `auth.getSession()` read that request context. See the [application composition example](examples/auth/src/getting-started.ts)
-and [runnable password example](examples/auth/src/password-methods.ts) for the setup.
+Supply your persistence and account Layers to `AuthRoutes`, then merge it with
+your router. In an existing Effect handler covered by `http.middleware`, call the
+service directly:
+
+<!-- prettier-ignore -->
+```ts
+const auth = yield* AppAuth;
+const result = yield* auth.signIn({ email, password });
+```
+
+The request context supplies credentials and cookie delivery. `auth.getSession()`,
+`auth.requireSession()`, and `auth.signOut()` use the same boundary. An
+`Authenticated` sign-in result contains a session with typed `claims.displayName`.
+
+Create the client and its atoms from the same contract:
+
+<!-- #region auth-client -->
+
+```ts [auth-client.ts]
+import * as AuthAtom from "effect-auth/Atom";
+import * as Client from "effect-auth/Client";
+
+import { AuthApi } from "./auth-contract";
+
+export const AppClient = Client.make(AuthApi, { baseUrl: "https://app.example.com" });
+export const auth = AuthAtom.make(AppClient);
+```
+
+<!-- #endregion auth-client -->
+
+Use the generated `auth.session`, `auth.signIn`, and `auth.signOut` atoms in your
+application's Atom registry. Within an Effect using `AppClient`, call the named
+client directly:
+
+<!-- prettier-ignore -->
+```ts
+const client = yield* AppClient;
+const result = yield* client.auth.signIn({ email, password });
+```
+
+Both calls return Effects; the remote client handles HTTP and schema decoding.
+Use `auth.runtime` for client workflows that share the atoms' instance, or provide
+`AppClient.layer` at a standalone program boundary. The
+[getting-started guide](docs/guide/getting-started.md) and
+[HTTP and client guide](docs/guide/http-and-client.md) show the full composition.
 
 Start with the [documentation](https://effect-auth.com) and
 [consumer examples](examples/auth). The public library lives in
