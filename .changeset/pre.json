@@ -6,6 +6,7 @@
     "@yielded/example-auth": "0.0.0"
   },
   "changesets": [
+    "composable-oauth-providers",
     "quiet-modules-shake",
     "simple-request-auth",
     "yielded-auth-publication",
