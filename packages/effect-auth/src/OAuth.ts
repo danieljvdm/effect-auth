@@ -89,6 +89,7 @@ export {
   OAuthSignInAuthorization,
   OAuthSignInBegin,
   OAuthSignInComplete,
+  OAuthSignInInput,
   OAuthSignInPolicy,
   OAuthSignInTransactionContext,
   OAuthTransactionSecrets,

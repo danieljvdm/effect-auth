@@ -56,10 +56,10 @@ const bindDefine = <
     ...module,
     strategy: makeAuthStrategy(
       {
-        signIn: module.operations.Begin.invoke,
+        signIn: module.signIn,
         completeSignIn: module.operations.Complete.invoke,
       },
-      module.layer(options.policy),
+      module.layer(options.policy).pipe(Layer.provideMerge(cryptoLayer)),
       { completion: true },
     ),
   });
@@ -163,11 +163,11 @@ const bindDefineRegistration = <
     registration,
     strategy: makeAuthStrategy(
       {
-        signIn: module.operations.Begin.invoke,
+        signIn: module.signIn,
         completeSignIn: module.operations.Complete.invoke,
         register: registration.operations.Complete.invoke,
       },
-      layer,
+      layer.pipe(Layer.provideMerge(cryptoLayer)),
       { completion: true },
     ),
   });

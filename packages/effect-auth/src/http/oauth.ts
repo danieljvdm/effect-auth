@@ -5,6 +5,7 @@ import { origin as Origin } from "../http-operation/configuration-schema";
 import type { AnyRoute } from "../http-operation/contract";
 import { OperationHttpConfigurationError, OperationHttpError } from "../http-operation/errors";
 import { oauthCallback, type OAuthHttpCallback } from "../http-operation/server";
+import { selectCallback } from "../oauth/callback";
 import { OAuthProtocol } from "../oauth/OAuthProtocol";
 import type { ProviderDefinition } from "../oauth/providerDefinition";
 import { OAuthProviderKey } from "../oauth/schema";
@@ -208,10 +209,11 @@ export const makeOAuth = <E, R, ResponseR>(
       );
     });
 
-  const callbackUrl = (provider: string, callbackId: string = provider) => {
-    const callback = Result.getOrThrow(saved)
-      .entries.find((entry) => entry.provider === provider)
-      ?.callbacks.find((entry) => entry.callbackId === callbackId);
+  const callbackUrl = (provider: string, callbackId?: string) => {
+    const entry = Result.getOrThrow(saved).entries.find((entry) => entry.provider === provider);
+
+    const callback =
+      entry === undefined ? undefined : selectCallback(provider, entry.callbacks, callbackId);
 
     if (callback === undefined) throw OperationHttpConfigurationError.make({ reason: "callback" });
 

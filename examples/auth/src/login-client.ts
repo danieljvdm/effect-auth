@@ -20,15 +20,8 @@ export const login = auth.runtime.fn<typeof Provider.Type>()(
   Effect.fn("example.oauthLogin")(function* (provider) {
     const client = yield* AppClient;
 
-    const ids = yield* Effect.try({
-      try: () => ({ flowId: crypto.randomUUID(), commandId: crypto.randomUUID() }),
-      catch: () => BrowserFlowUnavailable.make({}),
-    });
-
     const started = yield* client.auth.signIn({
-      ...ids,
       provider,
-      callbackId: provider,
       returnTarget: "/account",
     });
 

@@ -7,7 +7,7 @@ import { OAuthMethodUnsupported, OAuthRejected, OAuthUnavailable } from "./signI
 import {
   OAuthReturnTarget,
   OAuthSignInAuthorization,
-  OAuthSignInBegin,
+  OAuthSignInInput,
   OAuthSignInComplete,
 } from "./signInModels";
 
@@ -20,10 +20,11 @@ export const completionResult = <S extends Schema.Top>(schema: S) =>
     OAuthRegistrationRequired,
   ]);
 
-/** Shared begin action. Credentials are delivered by the request boundary. */
+/** Start a fresh attempt. IDs and the default callback are resolved on the server;
+ * credentials are delivered by the request boundary. This action is not replayable. */
 export const signIn = (options?: { readonly strategy?: string }) =>
   action({
-    payload: OAuthSignInBegin,
+    payload: OAuthSignInInput,
     success: OAuthSignInAuthorization,
     error: Failure,
     mode: "mutation",

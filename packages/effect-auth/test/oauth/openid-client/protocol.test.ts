@@ -140,7 +140,6 @@ const makeTransport = (
 const begin = (protocol: OAuthProtocol["Service"], provider: "github" | "google") =>
   protocol.prepareAuthorization({
     provider: OAuthProviderKey.make(provider),
-    callbackId: OAuthCallbackId.make(provider),
     flowId: RequestBindingFlowId.make(`flow-${provider}`),
   });
 

@@ -85,6 +85,10 @@ The default path is `/auth/{provider}/callback`; a custom contract `basePath`
 replaces `/auth`. Register the exact URL with the provider. After an uncertain
 exchange, start a fresh sign-in instead of retrying the code.
 
+`signIn({ provider, returnTarget })` creates a fresh attempt with server-generated
+IDs. It is not automatically retried. The underlying `operations.Begin` accepts
+explicit IDs for application-managed flows; supplying IDs does not make it replayable.
+
 ## Customize callbacks
 
 Override a path in your HTTP configuration:
@@ -103,8 +107,10 @@ const AuthRoutes = AuthHttp.layer(AppAuth, {
 // Callback: https://app.example.com/login/github/return
 ```
 
-For several destinations, use an array of `{ callbackId, path }` entries. Pass the
-chosen `callbackId` when starting sign-in. Callback paths must be unique.
+For several destinations, use an array of `{ callbackId, path }` entries. Sign-in
+defaults to the provider-named callback, or the only configured callback. Otherwise,
+pass `callbackId` to select one. Unknown or ambiguous callbacks are rejected.
+Callback paths must be unique.
 
 Use `oauth.respond` to render registration or MFA, or choose a different response.
 It receives the schema-encoded public result and `{ flowId, provider, callbackId }`,
