@@ -1,11 +1,10 @@
-import { Context, Effect, Layer, Schema, Stream } from "effect";
-import { Auth, OAuth } from "effect-auth";
+import { Auth, OAuth } from "@yielded/auth";
 import {
   gitHubOAuthAppConnectedProtocolLayer,
   gitHubOAuthAppProtocolLayer,
   gitHubOAuthAppProviderKey,
   type GitHubOAuthAppGeneration,
-} from "effect-auth/GitHub";
+} from "@yielded/auth/GitHub";
 import {
   makeConnectedModule,
   OAuthConnectedProfile,
@@ -17,11 +16,12 @@ import {
   OAuthUnavailable,
   type OAuthGrantId,
   type OAuthTransactionKeyring,
-} from "effect-auth/OAuth";
-import type { AuthInvocation } from "effect-auth/Operations";
-import type { SubjectId } from "effect-auth/Schema";
-import type { SessionSigningKeyring } from "effect-auth/Sessions";
-import { layerWebCrypto } from "effect-auth/WebCrypto";
+} from "@yielded/auth/OAuth";
+import type { AuthInvocation } from "@yielded/auth/Operations";
+import type { SubjectId } from "@yielded/auth/Schema";
+import type { SessionSigningKeyring } from "@yielded/auth/Sessions";
+import { layerWebCrypto } from "@yielded/auth/WebCrypto";
+import { Context, Effect, Layer, Schema, Stream } from "effect";
 import type { HttpClientResponse } from "effect/unstable/http";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 

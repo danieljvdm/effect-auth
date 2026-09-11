@@ -1,1 +1,1 @@
-export { stringSubjectId } from "effect-auth/Identity";
+export { stringSubjectId } from "@yielded/auth/Identity";

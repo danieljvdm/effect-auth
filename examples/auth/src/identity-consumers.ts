@@ -1,10 +1,10 @@
-import { Effect, Layer, Option } from "effect";
 import {
   IdentityRepository,
   numericSubjectId,
   stringSubjectId,
   SubjectSnapshot,
-} from "effect-auth/Identity";
+} from "@yielded/auth/Identity";
+import { Effect, Layer, Option } from "effect";
 
 /**
  * Minimal read-only identity compositions, deliberately without a database or

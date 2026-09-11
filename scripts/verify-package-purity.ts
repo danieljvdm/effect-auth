@@ -104,9 +104,9 @@ const testOnlyModuleReason = (sourcePath: string): string | undefined => {
 };
 
 const isWorkspaceImport = (specifier: string): boolean =>
-  specifier === "effect-auth" ||
-  specifier.startsWith("effect-auth/") ||
-  specifier.startsWith("@effect-auth/");
+  specifier === "@yielded/auth" ||
+  specifier.startsWith("@yielded/auth/") ||
+  specifier.startsWith("@yielded/");
 
 const displayNameFor = (packageName: string, exportPath: string): string =>
   exportPath === "." ? packageName : `${packageName}${exportPath.slice(1)}`;

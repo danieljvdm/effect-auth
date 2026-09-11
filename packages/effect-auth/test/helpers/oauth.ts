@@ -1,6 +1,6 @@
+import { AuthTokenCodec } from "@yielded/auth/AuthTokenCodec";
+import { type AuthTokenError } from "@yielded/auth/Errors";
 import { Effect, Layer } from "effect";
-import { AuthTokenCodec } from "effect-auth/AuthTokenCodec";
-import { type AuthTokenError } from "effect-auth/Errors";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { expect } from "vite-plus/test";
 

@@ -1,4 +1,4 @@
-# Effect Auth glossary
+# Yielded Auth glossary
 
 Use these terms consistently in public APIs, implementations, and review.
 
@@ -17,5 +17,7 @@ Use these terms consistently in public APIs, implementations, and review.
 | Receipt               | Durable evidence of the original command's decision, used for safe exact replay.    |
 | Credential command    | Private credential delivery instructions, never ordinary public result data.        |
 
-Service identifiers include `effect-auth/` and their owning module path. Public modules use
-PascalCase names; package roots expose same-name namespaces and explicit direct subpaths.
+The npm package is `@yielded/auth`. Public modules use PascalCase names; the package
+root exposes same-name namespaces and explicit direct subpaths. Service identifiers
+retain `effect-auth/` and their owning module path; protocol identifiers and cookie
+names are independent of the npm package name.

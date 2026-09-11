@@ -7,6 +7,15 @@ description: Define your authentication service and call it from your applicatio
 Define a shared contract, choose your server methods, and call them from your
 application. The contract also supplies your HTTP endpoints and browser client.
 
+## Install
+
+```sh
+vp add @yielded/auth@beta effect@4.0.0-rc.112
+```
+
+Yielded Auth is currently in beta and targets Effect v4. Install additional peer
+dependencies only for the [adapters](../reference/adapters) you use.
+
 ## Define the shared contract
 
 <!--@include: ../../README.md#auth-contract-->
@@ -86,7 +95,7 @@ strategy:
 
 ```ts [auth-with-passkeys.ts]
 import { Schema } from "effect";
-import { Auth, Passkey, Password, Sessions } from "effect-auth";
+import { Auth, Passkey, Password, Sessions } from "@yielded/auth";
 
 export const AppAuth = Auth.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
@@ -110,9 +119,3 @@ Call `auth.signIn({ email, password })` for passwords or
 The [passkey guide](./passkeys) shows the browser ceremony and completion.
 To expose it remotely, add the selected actions to a shared contract as shown in
 [HTTP and client state](./http-and-client#compose-a-passkey-workflow).
-
-## Package status
-
-This repository targets Effect v4 and is not published yet. The npm package
-currently named `effect-auth` is a different project; an install command will be
-added when this library has a published package name.

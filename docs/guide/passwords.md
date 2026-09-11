@@ -11,7 +11,7 @@ recovery to enable full password management.
 
 ```ts [auth.ts]
 import { Schema } from "effect";
-import { Auth, Password, Sessions } from "effect-auth";
+import { Auth, Password, Sessions } from "@yielded/auth";
 
 import { proofPolicy } from "./auth-config";
 

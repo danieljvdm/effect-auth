@@ -1,5 +1,5 @@
 {
-  "name": "@effect-auth/example-auth",
+  "name": "@yielded/example-auth",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -24,9 +24,9 @@
     "@effect/sql-sqlite-bun": "catalog:",
     "@effect/sql-sqlite-node": "catalog:",
     "@effect/sql-sqlite-wasm": "catalog:",
+    "@yielded/auth": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
-    "effect-auth": "workspace:*",
     "react": "catalog:",
     "react-dom": "catalog:",
     "scheduler": "catalog:"

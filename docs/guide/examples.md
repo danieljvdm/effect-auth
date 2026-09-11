@@ -4,7 +4,7 @@ description: Application compositions for authentication, persistence, and HTTP 
 
 # Examples
 
-Use these source references to connect Effect Auth to your application's accounts,
+Use these source references to connect Yielded Auth to your application's accounts,
 database, and request handlers. Each composition uses the package's public API.
 
 ## Authentication methods

@@ -1,9 +1,9 @@
+import * as AuthHttp from "@yielded/auth/Http";
+import * as HttpServer from "@yielded/auth/OperationHttpServer";
+import { requireAuthenticated } from "@yielded/auth/Operations";
 import { type AnyRelations, eq } from "drizzle-orm";
 import type { EffectPgDatabase } from "drizzle-orm/effect-postgres";
 import { Effect, Layer } from "effect";
-import * as AuthHttp from "effect-auth/Http";
-import * as HttpServer from "effect-auth/OperationHttpServer";
-import { requireAuthenticated } from "effect-auth/Operations";
 
 import { StudioAuth } from "./studio-auth";
 import { subject } from "./studio-passkey-schema";

@@ -1,15 +1,15 @@
 import { BunRuntime } from "@effect/platform-bun";
-import { DateTime, Effect, Encoding, Layer, Redacted, Schema } from "effect";
-import { LifecycleHooks } from "effect-auth/Hooks";
+import { LifecycleHooks } from "@yielded/auth/Hooks";
 import {
   type AuthCredentialCommand,
   AuthCredentialCommandCollector,
   guest,
   remoteGroup,
-} from "effect-auth/Operations";
-import { TokenDigest } from "effect-auth/Schema";
-import { AuthenticationEvidence, AuthenticationFlowId } from "effect-auth/Sessions";
-import { layerWebCrypto } from "effect-auth/WebCrypto";
+} from "@yielded/auth/Operations";
+import { TokenDigest } from "@yielded/auth/Schema";
+import { AuthenticationEvidence, AuthenticationFlowId } from "@yielded/auth/Sessions";
+import { layerWebCrypto } from "@yielded/auth/WebCrypto";
+import { DateTime, Effect, Encoding, Layer, Redacted, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 

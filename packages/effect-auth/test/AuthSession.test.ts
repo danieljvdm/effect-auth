@@ -1,11 +1,11 @@
 import { it as effectIt } from "@effect/vitest";
+import { AuthSession } from "@yielded/auth/AuthSession";
+import { AuthTokenCodec } from "@yielded/auth/AuthTokenCodec";
+import { InvalidSession } from "@yielded/auth/Errors";
+import { AuthPolicy, defaultAuthPolicy } from "@yielded/auth/Policy";
+import { Email, SubjectId } from "@yielded/auth/Schema";
+import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
 import { Cause, DateTime, Effect, Exit, Layer, Option, Redacted, Schema } from "effect";
-import { AuthSession } from "effect-auth/AuthSession";
-import { AuthTokenCodec } from "effect-auth/AuthTokenCodec";
-import { InvalidSession } from "effect-auth/Errors";
-import { AuthPolicy, defaultAuthPolicy } from "effect-auth/Policy";
-import { Email, SubjectId } from "effect-auth/Schema";
-import { layerCryptoWeb } from "effect-auth/WebCrypto";
 import { describe, expect } from "vite-plus/test";
 
 import { layerCryptoDeterministic } from "../src/testing/crypto";

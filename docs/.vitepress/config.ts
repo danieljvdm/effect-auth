@@ -3,7 +3,7 @@ import { defineConfig } from "vitepress";
 import tokyoNightLight from "./theme/tokyo-night-light.json" with { type: "json" };
 
 export default defineConfig({
-  title: "Effect Auth",
+  title: "Yielded Auth",
   description: "Composable authentication, sessions, and identity workflows for Effect.",
   lang: "en-US",
   cleanUrls: true,
@@ -14,7 +14,7 @@ export default defineConfig({
     theme: { light: { ...tokyoNightLight, type: "light" }, dark: "tokyo-night" },
   },
   themeConfig: {
-    siteTitle: "Effect Auth",
+    siteTitle: "Yielded Auth",
     nav: [
       { text: "Guide", link: "/guide/getting-started", activeMatch: "/guide/" },
       { text: "Reference", link: "/reference/modules", activeMatch: "/reference/" },

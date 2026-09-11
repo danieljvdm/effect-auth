@@ -7,7 +7,7 @@
     }
   ],
   "commit": false,
-  "fixed": [["effect-auth"]],
+  "fixed": [["@yielded/auth"]],
   "linked": [],
   "access": "public",
   "baseBranch": "main",

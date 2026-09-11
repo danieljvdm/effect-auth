@@ -1,5 +1,5 @@
 ---
-"effect-auth": minor
+"@yielded/auth": minor
 ---
 
 Define shared auth contracts for request-aware local services, named HTTP clients, and automatically synchronized Effect Atom state. Compose auth routes with existing HttpApi groups and use importable Effect Atom queries and mutations with scoped session hydration and shared invalidation.

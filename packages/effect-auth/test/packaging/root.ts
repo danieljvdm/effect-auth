@@ -1,1 +1,1 @@
-export * from "effect-auth";
+export * from "@yielded/auth";

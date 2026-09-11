@@ -1,7 +1,7 @@
+import * as AuthAtom from "@yielded/auth/Atom";
+import * as Fetch from "@yielded/auth/OperationHttpClient";
+import * as PasskeyBrowser from "@yielded/auth/PasskeyBrowser";
 import { Effect, Layer, Redacted } from "effect";
-import * as AuthAtom from "effect-auth/Atom";
-import * as Fetch from "effect-auth/OperationHttpClient";
-import * as PasskeyBrowser from "effect-auth/PasskeyBrowser";
 import { Atom } from "effect/unstable/reactivity";
 
 import { transport } from "./studio-transport";

@@ -1,12 +1,12 @@
 import { BunRuntime } from "@effect/platform-bun";
-import { DateTime, Effect, Layer } from "effect";
 import {
   identityQueryLayer,
   InspectIdentity,
   numericSubjectId,
   stringSubjectId,
-} from "effect-auth/Identity";
-import { AuthenticationAssurance, guest, remoteGroup } from "effect-auth/Operations";
+} from "@yielded/auth/Identity";
+import { AuthenticationAssurance, guest, remoteGroup } from "@yielded/auth/Operations";
+import { DateTime, Effect, Layer } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 

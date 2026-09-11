@@ -1,5 +1,5 @@
 {
-  "name": "effect-auth-monorepo",
+  "name": "yielded-auth-monorepo",
   "version": "0.0.0",
   "private": true,
   "workspaces": [
@@ -37,9 +37,9 @@
     "@fontsource/ibm-plex-mono": "catalog:",
     "@stylistic/eslint-plugin": "5.10.0",
     "@types/node": "catalog:",
+    "@yielded/auth": "workspace:*",
     "alchemy": "catalog:",
     "effect": "catalog:",
-    "effect-auth": "workspace:*",
     "effect-cf": "catalog:",
     "esbuild": "catalog:",
     "oxfmt": "0.64.0",

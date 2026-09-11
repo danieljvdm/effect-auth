@@ -12,25 +12,25 @@ individual modules for your methods, session strategy, and integration boundarie
 Core modules support both root namespaces and direct subpaths:
 
 ```ts
-import { Identity, SessionContract } from "effect-auth";
+import { Identity, SessionContract } from "@yielded/auth";
 // The same modules, selected directly:
-import * as IdentityModule from "effect-auth/Identity";
-import * as SessionContractModule from "effect-auth/SessionContract";
+import * as IdentityModule from "@yielded/auth/Identity";
+import * as SessionContractModule from "@yielded/auth/SessionContract";
 ```
 
 Prefer a direct subpath when bundle size or module-loading cost matters. Named
-imports such as `import { stringSubjectId } from "effect-auth/Identity"` let a
+imports such as `import { stringSubjectId } from "@yielded/auth/Identity"` let a
 bundler discard unrelated identity operations. Root namespaces are convenient,
 but retaining a namespace as a value can retain its other exports. Native ESM
 loads the root's entire static dependency graph; tree shaking requires a bundler.
 
-Optional adapters are direct imports, for example `effect-auth/DrizzlePostgres`,
-`effect-auth/OpenIdClient`, or `effect-auth/PasskeyBrowser`. Install only the peers
-required by the selected adapters. `effect-auth/Testing` remains test-only.
+Optional adapters are direct imports, for example `@yielded/auth/DrizzlePostgres`,
+`@yielded/auth/OpenIdClient`, or `@yielded/auth/PasskeyBrowser`. Install only the peers
+required by the selected adapters. `@yielded/auth/Testing` remains test-only.
 
 ## Application composition
 
-Import these as `effect-auth/<Module>` or as namespaces from `effect-auth`:
+Import these as `@yielded/auth/<Module>` or as namespaces from `@yielded/auth`:
 
 | Modules                       | Purpose                                                                |
 | ----------------------------- | ---------------------------------------------------------------------- |
@@ -62,7 +62,7 @@ helpers separately from server verifiers and persistence adapters.
 `AuthContract` is also available as a root namespace. Import `Http`, `Client`,
 `Atom`, and the low-level transport modules through their direct subpaths.
 React applications use `@effect/atom-react` with the same importable atoms;
-Effect Auth has no React-specific export.
+Yielded Auth has no React-specific export.
 
 See [HTTP and client state](../guide/http-and-client) for contract sharing and
 client workflow composition.

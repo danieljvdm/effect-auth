@@ -1,10 +1,9 @@
-import { DateTime, Effect, Layer, Schema } from "effect";
 import {
   coordinateCommit,
   hasCommitScope,
   type CommitJournal,
   LifecycleHooks,
-} from "effect-auth/Hooks";
+} from "@yielded/auth/Hooks";
 import {
   ProofPersistence,
   ProofRequestConflict,
@@ -18,7 +17,8 @@ import {
   ProofVersion as VersionSchema,
   type ProofContinuationId,
   ProofBinding as ProofBindingSchema,
-} from "effect-auth/Proofs";
+} from "@yielded/auth/Proofs";
+import { DateTime, Effect, Layer, Schema } from "effect";
 
 interface Row {
   record: ProofRecord;

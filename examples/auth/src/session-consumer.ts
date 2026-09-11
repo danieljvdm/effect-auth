@@ -1,6 +1,5 @@
-import { DateTime, Effect, Layer, Schema } from "effect";
-import { coordinateCommit, type CommitJournal, LifecycleHooks } from "effect-auth/Hooks";
-import { SubjectId } from "effect-auth/Schema";
+import { coordinateCommit, type CommitJournal, LifecycleHooks } from "@yielded/auth/Hooks";
+import { SubjectId } from "@yielded/auth/Schema";
 import {
   AuthenticationAuthority,
   type AuthenticationEvidence,
@@ -15,7 +14,8 @@ import {
   SessionUnavailable,
   StaleAuthentication,
   type StatefulSessionRecord,
-} from "effect-auth/Sessions";
+} from "@yielded/auth/Sessions";
+import { DateTime, Effect, Layer, Schema } from "effect";
 
 export const StaffClaims = Schema.Struct({
   tenant: Schema.NonEmptyString,

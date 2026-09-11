@@ -11,7 +11,7 @@ and delivery through the [HTTP boundary](./http-and-client).
 
 ```ts [auth.ts]
 import { Schema } from "effect";
-import { Auth, Sessions } from "effect-auth";
+import { Auth, Sessions } from "@yielded/auth";
 
 export const AppAuth = Auth.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),

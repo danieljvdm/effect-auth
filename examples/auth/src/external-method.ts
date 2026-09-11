@@ -1,5 +1,3 @@
-import type { Redacted } from "effect";
-import { Context, DateTime, Effect, Schema } from "effect";
 import {
   coordinateCommit,
   HookConfigurationError,
@@ -10,10 +8,12 @@ import {
   lifecycleSnapshot,
   pluginContributions,
   type LifecycleSnapshot,
-} from "effect-auth/Hooks";
-import type { LoginIdentifier } from "effect-auth/Identity";
-import { makeOperation } from "effect-auth/Operations";
-import { SubjectId } from "effect-auth/Schema";
+} from "@yielded/auth/Hooks";
+import type { LoginIdentifier } from "@yielded/auth/Identity";
+import { makeOperation } from "@yielded/auth/Operations";
+import { SubjectId } from "@yielded/auth/Schema";
+import type { Redacted } from "effect";
+import { Context, DateTime, Effect, Schema } from "effect";
 
 export class ExternalProofRejected extends Schema.TaggedError<ExternalProofRejected>()(
   "ExternalProofRejected",

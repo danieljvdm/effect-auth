@@ -1,5 +1,5 @@
+import { makeSessionContract, makeSessionHttpContract } from "@yielded/auth/SessionContract";
 import { Schema } from "effect";
-import { makeSessionContract, makeSessionHttpContract } from "effect-auth/SessionContract";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
 
 // Shared browser/server contracts contain no keys, storage or server implementation.

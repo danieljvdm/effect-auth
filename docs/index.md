@@ -1,6 +1,6 @@
 ---
 layout: home
-title: Effect Auth
+title: Yielded Auth
 titleTemplate: false
 description: Composable authentication, sessions, and identity workflows for Effect.
 sidebar: false
@@ -10,7 +10,7 @@ pageClass: ea-index
 
 <div class="ea-home">
 <header class="ea-home__intro">
-<h1>Effect Auth</h1>
+<h1>Yielded Auth</h1>
 <p>Authentication composed with Effect.<br>Keep your identity model. Choose your methods.</p>
 <div class="ea-home__actions">
 <a href="/guide/getting-started">Get started →</a>

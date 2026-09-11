@@ -1,6 +1,3 @@
-import { sql } from "drizzle-orm";
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import { Effect, Schema } from "effect";
 import {
   passkeyInvalidationMutation,
   requiredPasskeyCredentialConstraints,
@@ -11,15 +8,18 @@ import {
   type PasskeyManagementMapping,
   type PasskeyRegistrationMapping,
   type PasskeyWriteTables,
-} from "effect-auth/Drizzle";
+} from "@yielded/auth/Drizzle";
 import {
   PasskeyCredential,
   PasskeyManagementPolicy,
   PasskeyMethodPolicy,
   PasskeyProfile,
   PasskeyRequirement,
-} from "effect-auth/Passkey";
-import { SubjectId } from "effect-auth/Schema";
+} from "@yielded/auth/Passkey";
+import { SubjectId } from "@yielded/auth/Schema";
+import { sql } from "drizzle-orm";
+import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { Effect, Schema } from "effect";
 import type * as SqlClient from "effect/unstable/sql/SqlClient";
 
 export const subject = sqliteTable("passkey_subject", {

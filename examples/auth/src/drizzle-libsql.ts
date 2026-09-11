@@ -1,8 +1,8 @@
 import { NodeRuntime } from "@effect/platform-node";
 import * as LibsqlClient from "@effect/sql-libsql/LibsqlClient";
+import { makeAuthServices } from "@yielded/auth/DrizzleLibsql";
 import * as Drizzle from "drizzle-orm/effect-libsql";
 import { Effect } from "effect";
-import { makeAuthServices } from "effect-auth/DrizzleLibsql";
 
 import { mapping, verify } from "./drizzle-sqlite-node";
 

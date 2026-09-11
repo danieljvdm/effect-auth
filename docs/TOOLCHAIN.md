@@ -33,7 +33,7 @@ to their owning implementation, without routing through self-barrels.
 The export check validates casing, namespace targets, build entries, and workspace
 dependencies, including relative imports through the package's own public barrels.
 The purity check rejects production paths that reach test-only code.
-`effect-auth/Testing` is an explicit test-only entrypoint. Optional adapters remain
+`@yielded/auth/Testing` is an explicit test-only entrypoint. Optional adapters remain
 separate exports, and `sideEffects: []` requires import-time code to stay free of I/O.
 
 The package build preserves implementation modules and native root namespaces in
@@ -68,9 +68,11 @@ Before enabling automated releases:
 
 1. Give the release GitHub App contents and pull-request write access to this repo.
 2. Configure `EFFECT_AUTH_APP_ID` and `EFFECT_AUTH_APP_PRIVATE_KEY` repository secrets.
-3. Configure npm trusted publishing for `effect-auth`, repository
+3. Configure npm trusted publishing for `@yielded/auth`, repository
    `danieljvdm/effect-auth`, workflow `release.yml`. The first npm publication may
    require a manually authenticated owner before trusted publishing can be set.
+   Enable direct `npm publish` for this trusted publisher; the release workflow
+   does not use staged publishing.
 4. Set the repository variable `RELEASE_ENABLED=true`.
 
 The release workflow maintains a version PR using the App token so updates trigger
@@ -79,7 +81,9 @@ and publishes to npm with provenance. Initialization alone does not enable publi
 
 For a manual release, run the handoff gate, `vp run changeset:version`, and
 `vp run release:publish --dry-run`. Once authorized, run `vp run release:publish`
-and push the generated tags. The dry run does not publish or create tags.
+and push the generated tags. The dry run does not publish or create tags. Manual
+publishing requires an npm login with access to the `yielded` organization; the
+public prerelease is installed as `@yielded/auth@beta`.
 
 ## CI and review
 

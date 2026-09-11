@@ -15,7 +15,7 @@ including a request-field mapping for the private request binder.
 
 ```ts [auth.ts]
 import { Schema } from "effect";
-import { Auth, OAuth, Sessions } from "effect-auth";
+import { Auth, OAuth, Sessions } from "@yielded/auth";
 
 export const AppAuth = Auth.make("app/Auth", {
   claims: Schema.Struct({ displayName: Schema.String }),
@@ -42,8 +42,8 @@ export const AppAuth = Auth.make("app/Auth", {
 
 ```ts [github-provider.ts]
 import { Config, Effect, Layer } from "effect";
-import { gitHubOAuthAppProtocolLayer } from "effect-auth/GitHub";
-import { OAuthCallbackId, OAuthRedirectUri } from "effect-auth/OAuth";
+import { gitHubOAuthAppProtocolLayer } from "@yielded/auth/GitHub";
+import { OAuthCallbackId, OAuthRedirectUri } from "@yielded/auth/OAuth";
 
 export const GitHubProtocolLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -72,7 +72,7 @@ export const GitHubProtocolLive = Layer.unwrap(
 ```
 
 Register that exact callback URL in your GitHub OAuth App. The adapter requires
-`openid-client`. Other OAuth/OIDC providers use `effect-auth/OpenIdClient`.
+`openid-client`. Other OAuth/OIDC providers use `@yielded/auth/OpenIdClient`.
 
 ## Redirect to GitHub
 
@@ -132,7 +132,7 @@ capturing them. Custom callback hosts must own an equivalent request boundary.
 
 ```ts [oauth-security.ts]
 import { Layer } from "effect";
-import { OAuthReturnTargets, OAuthTransactionProtector } from "effect-auth/OAuth";
+import { OAuthReturnTargets, OAuthTransactionProtector } from "@yielded/auth/OAuth";
 
 import { transactionKeys } from "./auth-config";
 
@@ -163,8 +163,8 @@ inside the provider request:
 
 ```ts [read-profile.ts]
 import { Effect, Schema } from "effect";
-import { OAuthUnavailable, type OAuthGrantId } from "effect-auth/OAuth";
-import type { AuthInvocation } from "effect-auth/Operations";
+import { OAuthUnavailable, type OAuthGrantId } from "@yielded/auth/OAuth";
+import type { AuthInvocation } from "@yielded/auth/Operations";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 
 import { connected, profile } from "./connected-account";

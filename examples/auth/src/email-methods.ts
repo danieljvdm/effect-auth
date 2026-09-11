@@ -1,7 +1,6 @@
 import { BunRuntime } from "@effect/platform-bun";
-import { Effect, Encoding, Layer, Redacted } from "effect";
-import { Auth } from "effect-auth";
-import { AuthRequest } from "effect-auth/Auth";
+import { Auth } from "@yielded/auth";
+import { AuthRequest } from "@yielded/auth/Auth";
 import {
   EmailIdentifierNotifier,
   EmailReturnTargets,
@@ -9,11 +8,12 @@ import {
   magicLinkLandingHeaders,
   makeMagicLinkRenderer,
   parseMagicLinkFragment,
-} from "effect-auth/Email";
-import { composeHooks } from "effect-auth/Hooks";
-import { guest, type AuthCredentialCommand } from "effect-auth/Operations";
-import { EmailProofDelivery, type ProofDeliveryMessage } from "effect-auth/Proofs";
-import { layerWebCrypto } from "effect-auth/WebCrypto";
+} from "@yielded/auth/Email";
+import { composeHooks } from "@yielded/auth/Hooks";
+import { guest, type AuthCredentialCommand } from "@yielded/auth/Operations";
+import { EmailProofDelivery, type ProofDeliveryMessage } from "@yielded/auth/Proofs";
+import { layerWebCrypto } from "@yielded/auth/WebCrypto";
+import { Effect, Encoding, Layer, Redacted } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
 
 import { emailAuth, makeEmailConsumer, sessions, sessionPolicy } from "./email-methods-consumer";

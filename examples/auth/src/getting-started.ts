@@ -1,8 +1,8 @@
+import { Auth, Password, Passkey, PhoneOtp, Sessions } from "@yielded/auth";
+import * as AuthHttp from "@yielded/auth/Http";
+import type { RequestBindingConfiguration } from "@yielded/auth/Operations";
+import type { ProofKeyring } from "@yielded/auth/Proofs";
 import { Effect, Layer, Schema } from "effect";
-import { Auth, Password, Passkey, PhoneOtp, Sessions } from "effect-auth";
-import * as AuthHttp from "effect-auth/Http";
-import type { RequestBindingConfiguration } from "effect-auth/Operations";
-import type { ProofKeyring } from "effect-auth/Proofs";
 
 const AccountClaims = Schema.Struct({
   accountId: Schema.String,

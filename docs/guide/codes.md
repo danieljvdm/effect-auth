@@ -15,7 +15,7 @@ actions in a [shared contract](./http-and-client#expose-another-method).
 
 ```ts [auth.ts]
 import { Schema } from "effect";
-import { Auth, Email, Sessions } from "effect-auth";
+import { Auth, Email, Sessions } from "@yielded/auth";
 
 import { proofKeys, proofPolicy } from "./auth-config";
 
@@ -109,7 +109,7 @@ to cookies so they stay out of ordinary browser payloads.
 ## Use a magic link instead
 
 ```ts [magic-link.ts]
-import { Email } from "effect-auth";
+import { Email } from "@yielded/auth";
 
 import { proofPolicy } from "./auth-config";
 
@@ -128,7 +128,7 @@ history, and complete from the originating client.
 <summary>Proof expiry and rate limits</summary>
 
 ```ts [proof-policy.ts]
-import type { ProofPolicy } from "effect-auth/Proofs";
+import type { ProofPolicy } from "@yielded/auth/Proofs";
 
 export const proofPolicy: ProofPolicy = {
   lifetimeMillis: 5 * 60_000,

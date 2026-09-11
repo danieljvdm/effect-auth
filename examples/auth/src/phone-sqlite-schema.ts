@@ -1,6 +1,3 @@
-import { sql } from "drizzle-orm";
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import { Effect, Schema } from "effect";
 import {
   DrizzleMappingError,
   requiredProofConstraints,
@@ -8,8 +5,8 @@ import {
   phoneProofCompletionMapping,
   requiredPhoneConstraints,
   type PhoneMapping,
-} from "effect-auth/Drizzle";
-import type { PhoneLifecyclePolicy, PhoneAdmissionPolicy } from "effect-auth/PhoneOtp";
+} from "@yielded/auth/Drizzle";
+import type { PhoneLifecyclePolicy, PhoneAdmissionPolicy } from "@yielded/auth/PhoneOtp";
 import {
   ProofBinding,
   ProofPurpose,
@@ -19,9 +16,12 @@ import {
   ProofVersion,
   ProofRequestReceipt,
   ProofContinuationId,
-} from "effect-auth/Proofs";
-import { SubjectId, TokenDigest } from "effect-auth/Schema";
-import type { AuthenticationRequirement } from "effect-auth/Sessions";
+} from "@yielded/auth/Proofs";
+import { SubjectId, TokenDigest } from "@yielded/auth/Schema";
+import type { AuthenticationRequirement } from "@yielded/auth/Sessions";
+import { sql } from "drizzle-orm";
+import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { Effect, Schema } from "effect";
 import type * as SqlClient from "effect/unstable/sql/SqlClient";
 
 export const customer = sqliteTable("phone_customer", {

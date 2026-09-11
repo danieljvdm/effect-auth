@@ -1,5 +1,4 @@
-import { Crypto, DateTime, Effect, Encoding, Layer, Option, Schema, Redacted } from "effect";
-import { Auth, Email } from "effect-auth";
+import { Auth, Email } from "@yielded/auth";
 import {
   EmailAddressPersistence,
   EmailActionEvidence,
@@ -8,15 +7,15 @@ import {
   EmailUnavailable,
   type EmailCredentialSnapshot,
   type EmailAddressMutation,
-} from "effect-auth/Email";
+} from "@yielded/auth/Email";
 import {
   coordinateCommit,
   hasCommitScope,
   LifecycleHooks,
   type CommitJournal,
   type PreparedCommit,
-} from "effect-auth/Hooks";
-import { LoginIdentifier } from "effect-auth/Identity";
+} from "@yielded/auth/Hooks";
+import { LoginIdentifier } from "@yielded/auth/Identity";
 import {
   ProofPersistence,
   ProofUnavailable,
@@ -24,8 +23,8 @@ import {
   type ProofCompletionInput,
   type ProofRecord,
   type ProofRequestReceipt,
-} from "effect-auth/Proofs";
-import { SubjectId, TokenDigest } from "effect-auth/Schema";
+} from "@yielded/auth/Proofs";
+import { SubjectId, TokenDigest } from "@yielded/auth/Schema";
 import {
   AuthenticationAuthority,
   AuthenticationFlowId,
@@ -40,7 +39,8 @@ import {
   type AuthenticationRevision,
   type AuthenticationRequirement,
   type StatefulSessionRecord,
-} from "effect-auth/Sessions";
+} from "@yielded/auth/Sessions";
+import { Crypto, DateTime, Effect, Encoding, Layer, Option, Schema, Redacted } from "effect";
 
 export const Claims = Schema.Struct({ team: Schema.String, number: Schema.FiniteFromString });
 const budget = { limit: 30, windowMillis: 60_000 };
