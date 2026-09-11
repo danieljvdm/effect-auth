@@ -1,3 +1,5 @@
+import { Predicate, Schema } from "effect";
+
 import type {
   OpenIdClientConnectedOAuthProvider,
   OpenIdClientConnectedProtocolOptions,
@@ -18,6 +20,17 @@ export interface TokenCompatibility {
     },
   ) => void;
 }
+
+/** First-party rules travel with the exact provider generation. The symbol stays
+ * private so generic provider options do not expose grant-bearing hooks. */
+export const tokenCompatibility = Symbol("effect-auth/OpenIdClient/tokenCompatibility");
+
+export const TokenCompatibility = Schema.declare<TokenCompatibility>(
+  (input): input is TokenCompatibility =>
+    Predicate.isObject(input) &&
+    "inspectReceipt" in input &&
+    Predicate.isFunction(input.inspectReceipt),
+);
 
 export class DefiniteTokenRejection extends Error {}
 

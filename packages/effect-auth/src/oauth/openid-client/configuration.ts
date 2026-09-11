@@ -11,6 +11,7 @@ import {
   OAuthRedirectUri,
 } from "../signInModels";
 import { freezeOAuth } from "../signInSnapshot";
+import { TokenCompatibility, tokenCompatibility } from "./compatibility";
 import {
   OpenIdClientConfigurationError,
   type OpenIdClientAuthentication,
@@ -70,6 +71,7 @@ const optionsSchema = <R>() =>
           Schema.Struct({
             ...common,
             protocol: Schema.Literal("oauth"),
+            [tokenCompatibility]: Schema.optionalKey(TokenCompatibility),
             authorizationEndpoint: boundedString(2048),
             tokenEndpoint: boundedString(2048),
             pkceS256: Schema.Literal(true),

@@ -16,3 +16,11 @@ Run a declared example through `vp run -F @yielded/example-auth <task>`.
 All consumer files are checked by the root validation command. TOTP adapter
 fixtures that exercise private implementation helpers live under the library’s
 `test/fixtures`, where they remain typechecked.
+
+`login-contract.ts`, `login-server.ts`, and `login-client.ts` compose email OTP
+and GitHub signup/sign-in through one Auth service, stateful sessions, HTTP cookies,
+and Effect Atom workflows. Google OIDC is optional. The host supplies durable
+registration/session/proof adapters and `EmailProofDelivery`, real provider
+credentials, and keyrings. These files are typechecked composition examples;
+`example:email-methods` is the existing runnable email journey. See the
+[OAuth guide](../../docs/guide/oauth.md) for callback and provider setup.

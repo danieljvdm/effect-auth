@@ -9,6 +9,7 @@ export { OpenIdClientConfigurationError } from "./oauth/openid-client/models";
 export {
   gitHubOAuthAppConnectedProtocolLayer,
   gitHubOAuthAppProtocolLayer,
+  gitHubOAuthAppProvider,
   makeGitHubOAuthAppConnectedProtocol,
   makeGitHubOAuthAppProtocol,
 } from "./oauth/github/protocol";

@@ -3,6 +3,7 @@ import type { CustomFetch } from "openid-client";
 
 import type { OAuthProtocolRejected } from "../signInErrors";
 import type { OAuthProtocolConfiguration, OAuthVerifiedExternalIdentity } from "../signInModels";
+import type { TokenCompatibility, tokenCompatibility } from "./compatibility";
 
 export class OpenIdClientConfigurationError extends Schema.TaggedError<OpenIdClientConfigurationError>()(
   "OpenIdClientConfigurationError",
@@ -55,6 +56,8 @@ export interface OpenIdClientOidcProvider extends ProviderGeneration {
 }
 
 export interface OpenIdClientOAuthProvider<R = never> extends ProviderGeneration {
+  /** @internal First-party provider behavior, retained by the configuration codec. */
+  readonly [tokenCompatibility]?: TokenCompatibility;
   readonly protocol: "oauth";
   readonly authorizationEndpoint: string;
   readonly tokenEndpoint: string;
